@@ -46,12 +46,16 @@ def get_filtered_index(df, year, election, locality, state, party):
 
 def prepare_grouped_data(df, denom, num, mode, orientation, weight_col):
     if mode == "percent":
+        if df[weight_col].dtype == object:
+            df[weight_col] = pd.to_numeric(df[weight_col], errors='coerce')
+            df = df[df[weight_col].notna()]
         grouped = df.groupby([denom, num])[weight_col].sum().reset_index()
         grouped = grouped[
             grouped[denom].notna() & ~grouped[denom].isin(EXCLUDE_VALUES) &
             grouped[num].notna() & ~grouped[num].isin(EXCLUDE_VALUES)
         ]
         key = denom if orientation == "vertical" else num
+        grouped[weight_col] = pd.to_numeric(grouped[weight_col], errors="coerce")
         grouped["Percentage"] = grouped.groupby(key)[weight_col].transform(lambda x: (x / x.sum()) * 100).round(0)
         return grouped.drop(columns=weight_col), "Percentage"
     else:
@@ -93,7 +97,10 @@ def create_percent_charts(grouped, denom, num, orientation):
             continue
         col = num if orientation == "vertical" else denom
         filtered[col] = filtered[col].astype(str)
-        filtered[col] = pd.Categorical(filtered[col], categories=sorted(var_values), ordered=True)
+        filtered[col] = filtered[col].astype(str).str.strip()
+        filtered[col] = pd.Categorical(filtered[col], categories=sorted([str(v).strip() for v in var_values]),
+                                       ordered=True)
+        filtered = filtered.dropna(subset=[col])
         filtered = filtered.sort_values(by=col)
 
         fig = px.pie(

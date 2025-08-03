@@ -2,6 +2,7 @@
 from dash import Input, Output, State, dcc, html, dash_table
 import pandas as pd
 import os
+from utils import EXCLUDE_VALUES
 
 import json
 
@@ -90,6 +91,10 @@ def register_callbacks(app, df_path):
 
             grouped, y_col = prepare_grouped_data(df_file, denom_val, num_val, mode, orientation, weight_col)
 
+            # === Show empty message if no respondents meet both criteria ===
+            if grouped.empty:
+                return options, denom_val, options, num_val, html.P("No respondents answered both selected questions.", style={"color": "red"}), [], []
+
             if mode == "percent":
                 chart_output = create_percent_charts(grouped, denom_val, num_val, orientation)
             else:
@@ -100,18 +105,22 @@ def register_callbacks(app, df_path):
             denom_q = VARIABLE_METADATA.get(denom_val, {}).get("question", "")
             num_q = VARIABLE_METADATA.get(num_val, {}).get("question", "")
 
-            sample_size = df_file[num_val].notna().sum()
+            # Updated sample size: based on joint non-missing
+            sample_df = df_file[
+                df_file[denom_val].notna() &
+                df_file[num_val].notna() &
+                ~df_file[denom_val].isin(EXCLUDE_VALUES) &
+                ~df_file[num_val].isin(EXCLUDE_VALUES)
+            ]
+            sample_size = len(sample_df)
 
             question_heading = html.Div([
-                html.Div(f"Group by: {denom_q}", style={"fontSize": "22px", "fontWeight": "bold",
-                                                                      "marginBottom": "5px"}) if denom_q else html.Div(),
-                html.Div(f"Breakdown by : {num_q}", style={"fontSize": "22px", "fontWeight": "bold",
-                                                                      "marginBottom": "5px"}) if num_q else html.Div(),
-                html.Div(f"Sample size (non-missing): {sample_size:,}",
-                         style={"fontSize": "20px", "fontStyle": "italic"}) if sample_size else html.Div()
+                html.Div(f"Group by: {denom_q}", style={"fontSize": "22px", "fontWeight": "bold", "marginBottom": "5px"}) if denom_q else html.Div(),
+                html.Div(f"Breakdown by : {num_q}", style={"fontSize": "22px", "fontWeight": "bold", "marginBottom": "5px"}) if num_q else html.Div(),
+                html.Div(f"Sample size (non-missing): {sample_size:,}", style={"fontSize": "20px", "fontStyle": "italic"}) if sample_size else html.Div()
             ])
 
             return options, denom_val, options, num_val, html.Div([question_heading, chart_output]), columns, data
 
         except Exception as e:
-            return [], None, [], None, html.P(f"Error: {e}"), [], []
+            return [], None, [], None, html.P(f"Error: {e}", style={"color": "red"}), [], []

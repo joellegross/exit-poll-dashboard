@@ -1,0 +1,76 @@
+/* Import Open Sans from Google Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600&display=swap');
+
+/* Apply font globally */
+body {
+    font-family: 'Open Sans', sans-serif;
+    background-color: #fafafa;
+    margin: 20px;
+}
+
+/* === Headings and labels === */
+h1, h2, h3, h4 {
+    color: #1e2b38;
+    margin-bottom: 0.5em;
+}
+
+label {
+    font-weight: bold;
+    margin-bottom: 5px;
+    display: block;
+    color: #444;
+}
+
+/* === Dropdowns and form elements === */
+.Select-control,
+.dash-dropdown,
+.dash-input {
+    border-radius: 6px;
+    border: 1px solid #ccc;
+    padding: 6px;
+    background-color: #fff;
+    font-size: 15px;
+}
+
+.Select-menu-outer {
+    z-index: 1001;
+}
+
+/* === Graph containers === */
+.graph-container {
+    background: white;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    padding: 10px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+/* === Table styles === */
+.dash-table-container .dash-spreadsheet {
+    font-size: 14px;
+    border: none;
+}
+
+.dash-table-container .dash-spreadsheet-container {
+    border-radius: 6px;
+    border: 1px solid #ccc;
+}
+
+.dash-table-container th {
+    background-color: #e9ecef;
+    font-weight: bold;
+}
+
+/* === Chart title spacing === */
+.js-plotly-plot .main-svg .gtitle {
+    font-size: 18px;
+    fill: #333;
+}
+
+/* === Responsive layout === */
+@media (max-width: 768px) {
+    .graph-container {
+        width: 100%;
+    }
+}
