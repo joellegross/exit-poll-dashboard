@@ -1,10 +1,12 @@
 # callbacks.py
 from dash import Input, Output, State, dcc, html, dash_table
 import pandas as pd
+import os
 
 import json
 
-with open("/Users/joellegr/Documents/GitHub/exit-poll-dashboard/data/master_variable_index_enhanced.json", "r", encoding="utf-8") as f:
+variable_metadata_path = os.path.join("data", "master_variable_index_enhanced.json")
+with open(variable_metadata_path, "r", encoding="utf-8") as f:
     VARIABLE_METADATA = json.load(f)
 
 from utils import (

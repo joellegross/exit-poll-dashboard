@@ -1,9 +1,11 @@
 # layout.py
 from dash import dcc, html, dash_table
 import pandas as pd
+import os
 
 def create_layout():
-    df = pd.read_csv("/Users/joellegr/Documents/GitHub/exit-poll-dashboard/data/datafile_paths_dynamic.csv")
+    df_path = os.path.join("data", "datafile_paths_dynamic.csv")
+    df = pd.read_csv(df_path)
 
     year_options = sorted(df["year"].dropna().unique(), reverse=True)
     election_options = sorted(df["election_folder"].dropna().unique())

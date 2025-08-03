@@ -5,13 +5,15 @@ import re
 import json
 import plotly.express as px
 from dash import dcc, html
+import os
 
 EXCLUDED_COLS = {"ID", "PRECINCT", "STANUM", "BACKSIDE", "TELEPOLL", "CALL", "CDNUM", "VERSION",
                  "ZCODE1", "ZCODE2", "ZCODE3", "ZCODE4"}
 EXCLUDE_VALUES = {"Did not vote", "None", "Other", None, " "}
 
 # Load general presidential candidate party map
-with open("/Users/joellegr/Documents/GitHub/exit-poll-dashboard/data/general_presidential_candidates_party_map.json", "r") as f:
+candidate_map_path = os.path.join("data", "general_presidential_candidates_party_map.json")
+with open(candidate_map_path, "r") as f:
     CANDIDATE_PARTY_MAP = json.load(f)
 
 PARTY_COLORS = {
