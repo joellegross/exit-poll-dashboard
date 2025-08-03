@@ -2,11 +2,7 @@ import os
 import re
 import pandas as pd
 
-ROOT_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
-ROOT_DIR = os.path.abspath(ROOT_DIR)
-
-years = [f for f in os.listdir(ROOT_DIR) if f != '.DS_Store']
-file_records = []
+ROOT_DIR = os.path.join(os.path.dirname(__file__), "..", "data")  # relative path to /data folder
 
 general_pattern = re.compile(
     r"(?P<id>\d+_)?(?P<state>[A-Za-z\s]+?)\s*(?P<year>19\d{2}|20\d{2})\s*(?P<party>(Dem|Rep|Democratic|Republican))?",
@@ -29,54 +25,52 @@ def normalize_party(party_raw):
         return "DEM"
     elif "rep" in party_clean:
         return "REP"
-    else:
-        return party_raw.upper()
+    return party_raw.upper()
 
-for year in years:
+records = []
+
+for year in os.listdir(ROOT_DIR):
+    year_path = os.path.join(ROOT_DIR, year)
+    if not os.path.isdir(year_path):
+        continue
+
     for election_folder in ["General", "Primary"]:
-        locality_types = ["National", "State"] if election_folder == "General" else [None]
-
-        for locality_type in locality_types:
-            folder_parts = [ROOT_DIR, year, election_folder]
+        for locality_type in ["National", "State"] if election_folder == "General" else [None]:
+            sub_path = [year_path, election_folder]
             if locality_type:
-                folder_parts.append(locality_type)
+                sub_path.append(locality_type)
+            folder_path = os.path.join(*sub_path)
 
-            folder_path = os.path.join(*folder_parts)
             if not os.path.exists(folder_path):
                 continue
 
-            print(f"📂 Scanning folder: {folder_path}")
+            for fname in os.listdir(folder_path):
+                if not fname.endswith(".csv") or fname == ".DS_Store":
+                    continue
 
-            files = [
-                os.path.join(folder_path, f)
-                for f in os.listdir(folder_path)
-                if f != '.DS_Store' and f.endswith(".csv") and os.path.isfile(os.path.join(folder_path, f))
-            ]
+                full_path = os.path.join(folder_path, fname)
+                rel_path = os.path.relpath(full_path, start=os.path.dirname(__file__))  # ✅ Relative!
 
-            for filepath in files:
-                filename = os.path.basename(filepath)
-                match = primary_pattern.search(filename) if election_folder == "Primary" else general_pattern.search(filename)
+                match = (
+                    primary_pattern.search(fname)
+                    if election_folder == "Primary"
+                    else general_pattern.search(fname)
+                )
 
                 if match:
                     state = match.group("state").strip()
                     file_year = match.group("year")
-                    party_raw = match.group("party1") or match.group("party2") if election_folder == "Primary" else match.group("party")
+                    party_raw = match.group("party1") or match.group("party2") if election_folder == "Primary" else None
                     party = normalize_party(party_raw)
 
-                    file_records.append({
+                    records.append({
                         "state": state,
                         "year": file_year,
                         "election_folder": election_folder,
                         "locality_type": locality_type if locality_type else "N/A",
                         "party": party,
-                        "path": filepath
+                        "path": rel_path  # ✅ Store relative path
                     })
 
-                    print(f"✔ Found: {state} {file_year} | Folder: {election_folder} | Party: {party or 'N/A'}")
-                else:
-                    print(f"✖ Filename does not match expected format: {filename}")
-
-# Save to CSV using relative path ✅
-file_df = pd.DataFrame(file_records)
-os.makedirs("data", exist_ok=True)
-file_df.to_csv(os.path.join("data", "datafile_paths_dynamic.csv"), index=False)
+df = pd.DataFrame(records)
+df.to_csv(os.path.join(os.path.dirname(__file__), "..", "data", "datafile_paths_dynamic.csv"), index=False)
