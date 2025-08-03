@@ -1,0 +1,9 @@
+dash
+plotly
+numpy
+pandas
+openpyxl
+gunicorn
+json
+re
+os
