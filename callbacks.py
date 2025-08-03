@@ -5,6 +5,9 @@ import os
 
 import json
 
+DATA_ROOT = os.path.join(os.path.dirname(__file__), "data")
+
+
 variable_metadata_path = os.path.join("data", "master_variable_index_enhanced.json")
 with open(variable_metadata_path, "r", encoding="utf-8") as f:
     VARIABLE_METADATA = json.load(f)
@@ -71,7 +74,7 @@ def register_callbacks(app, df_path):
             if dff.empty:
                 return [], None, [], None, html.P("No matching file."), [], []
 
-            filepath = dff.iloc[0]["path"]
+            filepath = os.path.join(DATA_ROOT, dff.iloc[0]["path"])
             df_file = pd.read_csv(filepath, low_memory=False)
             df_file.columns = [col.upper().strip() for col in df_file.columns]
 
