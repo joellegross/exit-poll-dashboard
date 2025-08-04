@@ -2,7 +2,7 @@
 
 This dashboard allows interactive exploration of U.S. exit poll data across multiple election years, states, and election types (General or Primary). Users can filter by year, state, party, and demographic variables to dynamically visualize response distributions and trends.
 
-## 📊 Features
+## Features
 
 - View exit poll data from **multiple election cycles**
 - Filter by:
@@ -14,15 +14,15 @@ This dashboard allows interactive exploration of U.S. exit poll data across mult
 - Choose between **Count** and **Percentage** views
 - Exportable summary tables
 
-## 🚀 Live Demo
+## Live Dashboard
 
 > Access the dashboard live here: [https://exit-poll-dashboard.onrender.com/](https://exit-poll-dashboard.onrender.com/)
 
-## 🧠 Motivation
+## Motivation
 
 Exit polls are a valuable snapshot of voter behavior and political sentiment on election day. However, currently there exists no comprehensive data set where you can view repsonses across years. This tool helps to fill that gap. The audience is researchers, journalists, and election analysts examine how various groups voted across states and time.
 
-## 📁 Data Structure
+## Data Structure
 
 The dashboard uses a structured directory of labeled exit poll data, standardized across:
 
