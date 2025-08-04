@@ -12,7 +12,6 @@ This dashboard allows interactive exploration of U.S. exit poll data across mult
   - **Party** (for Primaries)
 - Group responses by any available demographic or issue-based variable
 - Choose between **Count** and **Percentage** views
-- Exportable summary tables
 
 ## Live Dashboard
 
@@ -20,7 +19,7 @@ This dashboard allows interactive exploration of U.S. exit poll data across mult
 
 ## Motivation
 
-Exit polls are a valuable snapshot of voter behavior and political sentiment on election day. However, currently there exists no comprehensive data set where you can view repsonses across years. This tool helps to fill that gap. The audience is researchers, journalists, and election analysts examine how various groups voted across states and time.
+Exit polls are a valuable snapshot of voter behavior and political sentiment on election day. However, currently there is no comprehensive data set where you can view repsonses across years. This tool helps to fill that gap. The intended audience of this dashboard is researchers, journalists, and election analysts to aid in our study of how various groups voted across states and time.
 
 ## Data Structure
 
@@ -71,5 +70,5 @@ python app.py
 
 - NBC News Decision Desk & the Exit Poll team
 - Exit poll data from National Election Poll (ABC, CBS, NBC, CNN) and Edison Research
-- Stephanie Perry, Dr. Marc Meredith, and Dr. Sharath Chandra Guntuku (mentors and advisors)
+- Special thanks to Stephanie Perry, Dr. Marc Meredith, and Dr. Sharath Chandra Guntuku (mentors and advisors)
 
