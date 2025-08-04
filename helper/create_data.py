@@ -3,7 +3,7 @@ import os
 import re
 import json
 
-ROOT_DIR = os.path.join(os.path.dirname(__file__), "data")
+ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data"))
 
 states_full = [
     'Alabama', 'Alaska', 'Arizona', 'Arkansas', 'California', 'Colorado', 'Connecticut', 'Delaware',

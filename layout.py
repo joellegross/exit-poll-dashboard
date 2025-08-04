@@ -14,28 +14,30 @@ def create_layout():
     return html.Div([
         html.H2("Exit Poll Dynamic Dashboard", style={"marginBottom": "1rem"}),
 
-        html.Div(className="filter-container", children=[
+        html.Div(className="filter-row", children=[
             html.Div([
                 html.Label("Year"),
                 dcc.Dropdown(id='year-dropdown',
                              options=[{"label": y, "value": y} for y in year_options],
                              value=year_options[0])
-            ]),
+            ], className="inline-filter"),
 
             html.Div([
                 html.Label("Election Type"),
                 dcc.Dropdown(id='election-dropdown',
                              options=[{"label": e, "value": e} for e in election_options],
                              value=election_options[0])
-            ]),
+            ], className="inline-filter"),
 
             html.Div(id="locality-container", children=[
                 html.Label("Locality Type"),
                 dcc.Dropdown(id='locality-dropdown',
                              options=[{"label": l, "value": l} for l in locality_options],
                              value=locality_options[0])
-            ]),
+            ], className="inline-filter"),
+        ]),
 
+        html.Div(className="filter-container", children=[
             html.Div(id="state-container", children=[
                 html.Label("State"),
                 dcc.Dropdown(id='state-dropdown', placeholder="Select a state")

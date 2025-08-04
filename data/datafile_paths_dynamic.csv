@@ -363,7 +363,6 @@ CT,2010,General,State,,../data/2010/General/State/CT 2010.csv
 VT,2010,General,State,,../data/2010/General/State/VT 2010.csv
 PA,2010,General,State,,../data/2010/General/State/PA 2010.csv
 IL,2010,General,State,,../data/2010/General/State/IL 2010.csv
-National,2010,General,State,,../data/2010/General/State/National 2010.csv
 CA,2010,General,State,,../data/2010/General/State/CA 2010.csv
 MO,2010,General,State,,../data/2010/General/State/MO 2010.csv
 OR,2010,General,State,,../data/2010/General/State/OR 2010.csv
@@ -381,6 +380,7 @@ NV,2010,General,State,,../data/2010/General/State/NV 2010.csv
 HI,2010,General,State,,../data/2010/General/State/HI 2010.csv
 LA,2010,General,State,,../data/2010/General/State/LA 2010.csv
 FL,2010,General,State,,../data/2010/General/State/FL 2010.csv
+GA,2021,General,State,,../data/2021/General/State/GA 2021.csv
 National,2020,General,National,,../data/2020/General/National/National 2020.csv
 FL,2020,General,State,,../data/2020/General/State/FL 2020.csv
 NV,2020,General,State,,../data/2020/General/State/NV 2020.csv
@@ -533,6 +533,7 @@ VT,2016,Primary,N/A,REP,../data/2016/Primary/VT REP 2016.csv
 IA,2016,Primary,N/A,REP,../data/2016/Primary/IA REP 2016.csv
 WV,2016,Primary,N/A,REP,../data/2016/Primary/WV REP 2016.csv
 IN,2016,Primary,N/A,DEM,../data/2016/Primary/IN DEM 2016.csv
+MI,2016,Primary,N/A,DEM,../data/2016/Primary/MI DEM 2016.csv
 NH,2016,Primary,N/A,DEM,../data/2016/Primary/NH DEM 2016.csv
 NY,2016,Primary,N/A,REP,../data/2016/Primary/NY REP 2016.csv
 TN,2016,Primary,N/A,REP,../data/2016/Primary/TN REP 2016.csv
@@ -572,7 +573,6 @@ OK,1998,General,State,,../data/1998/General/State/OK 1998.csv
 TN,1998,General,State,,../data/1998/General/State/TN 1998.csv
 NY,1998,General,State,,../data/1998/General/State/NY 1998.csv
 WA,1998,General,State,,../data/1998/General/State/WA 1998.csv
-None,1998,General,State,,../data/1998/General/State/None 1998.csv
 MI,1998,General,State,,../data/1998/General/State/MI 1998.csv
 IA,1998,General,State,,../data/1998/General/State/IA 1998.csv
 Data,1998,General,State,,../data/1998/General/State/02780-0039-Data 1998.csv

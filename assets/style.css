@@ -1,7 +1,7 @@
 /* Import Open Sans from Google Fonts */
 @import url('https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600&display=swap');
 
-/* Apply font globally */
+/* === Global Styles === */
 body {
     font-family: 'Open Sans', sans-serif;
     background-color: #fafafa;
@@ -36,6 +36,25 @@ label {
     z-index: 1001;
 }
 
+/* === Filter layout for top row === */
+.filter-row {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.inline-filter {
+    flex: 1 1 30%;
+    min-width: 250px;
+}
+
+/* === General spacing for all filter blocks === */
+.filter-container > div {
+    margin-bottom: 1rem;
+}
+
 /* === Graph containers === */
 .graph-container {
     background: white;
@@ -68,8 +87,16 @@ label {
     fill: #333;
 }
 
-/* === Responsive layout === */
+/* === Responsive layout for smaller screens === */
 @media (max-width: 768px) {
+    .filter-row {
+        flex-direction: column;
+    }
+
+    .inline-filter {
+        flex: 1 1 100%;
+    }
+
     .graph-container {
         width: 100%;
     }

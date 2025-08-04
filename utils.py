@@ -8,8 +8,8 @@ from dash import dcc, html
 import os
 
 EXCLUDED_COLS = {"ID", "PRECINCT", "STANUM", "BACKSIDE", "TELEPOLL", "CALL", "CDNUM", "VERSION",
-                 "ZCODE1", "ZCODE2", "ZCODE3", "ZCODE4"}
-EXCLUDE_VALUES = {"Did not vote", "None", "Other", None, " "}
+                 "ZCODE1", "ZCODE2", "ZCODE3", "ZCODE4", "GEOCODE"}
+EXCLUDE_VALUES = {"Did not vote", "None", "Other", None, " ", "Omit"}
 
 # Load general presidential candidate party map
 candidate_map_path = os.path.join("data", "general_presidential_candidates_party_map.json")
