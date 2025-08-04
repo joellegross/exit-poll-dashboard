@@ -1,4 +1,4 @@
-# 🗳️ Exit Poll Dynamic Dashboard
+# Exit Poll Dynamic Dashboard
 
 This dashboard allows interactive exploration of U.S. exit poll data across multiple election years, states, and election types (General or Primary). Users can filter by year, state, party, and demographic variables to dynamically visualize response distributions and trends.
 
@@ -16,12 +16,11 @@ This dashboard allows interactive exploration of U.S. exit poll data across mult
 
 ## 🚀 Live Demo
 
-> ⚠️ _(Optional if deployed)_  
-> Access the dashboard live here: [https://your-app-url.onrender.com](https://your-app-url.onrender.com)
+> Access the dashboard live here: [https://exit-poll-dashboard.onrender.com/](https://exit-poll-dashboard.onrender.com/)
 
 ## 🧠 Motivation
 
-Exit polls are a valuable snapshot of voter behavior and political sentiment on election day. However, they are often siloed and difficult to explore across cycles. This tool helps researchers, journalists, and election analysts examine how various groups voted across states and time.
+Exit polls are a valuable snapshot of voter behavior and political sentiment on election day. However, currently there exists no comprehensive data set where you can view repsonses across years. This tool helps to fill that gap. The audience is researchers, journalists, and election analysts examine how various groups voted across states and time.
 
 ## 📁 Data Structure
 
@@ -37,14 +36,13 @@ Metadata for compatible variables across elections is stored in:
 data/master_variable_index_enhanced.json
 ```
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 - **Python** with [Dash](https://dash.plotly.com/) and [Plotly](https://plotly.com/)
 - **Pandas** for data manipulation
 - **pyreadstat** to read SPSS `.sav` and `.por` files
-- **Render** for deployment (free or paid tiers)
 
-## 📦 Installation
+## Installation
 
 ### 1. Clone the repo
 ```bash
@@ -70,20 +68,9 @@ python app.py
 
 Visit [http://localhost:8050](http://localhost:8050) in your browser.
 
-## 🧪 Development Tips
 
-- To preprocess raw SPSS files into clean CSVs, run:
-  ```bash
-  python scripts/preprocess_exit_poll_files.py
-  ```
-
-- The dashboard relies on `data/datafile_paths_dynamic.csv` to index files for use.
-
-## 🤝 Acknowledgments
+## Acknowledgments
 
 - NBC News Decision Desk & the Exit Poll team  
 - Stephanie Perry, Dr. Marc Meredith, and Dr. Sharath Chandra Guntuku (mentors and advisors)
 
-## 📜 License
-
-MIT License. See `LICENSE` file.
