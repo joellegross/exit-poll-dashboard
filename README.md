@@ -66,11 +66,10 @@ pip install -r requirements.txt
 python app.py
 ```
 
-Visit [http://localhost:8050](http://localhost:8050) in your browser.
-
 
 ## Acknowledgments
 
-- NBC News Decision Desk & the Exit Poll team  
+- NBC News Decision Desk & the Exit Poll team
+- Exit poll data from National Election Poll (ABC, CBS, NBC, CNN) and Edison Research
 - Stephanie Perry, Dr. Marc Meredith, and Dr. Sharath Chandra Guntuku (mentors and advisors)
 
