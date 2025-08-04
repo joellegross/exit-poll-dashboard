@@ -1,0 +1,25 @@
+# macOS system files
+.DS_Store
+
+# Python bytecode/cache
+__pycache__/
+*.py[cod]
+
+# R session files
+.Rhistory
+.RData
+.Rproj.user/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# VS Code settings (optional)
+.vscode/
+
+# JetBrains IDEs (e.g., PyCharm)
+.idea/
+
+# Environment files
+.env
+.venv/
+venv/
