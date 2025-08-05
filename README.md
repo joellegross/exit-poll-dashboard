@@ -1,4 +1,5 @@
 # Exit Poll Dynamic Dashboard
+**Joelle Gross | Summer 2025 Master's Practicum**
 
 This dashboard allows interactive exploration of U.S. exit poll data across multiple election years, states, and election types (General or Primary). Users can filter by year, state, party, and demographic variables to dynamically visualize response distributions and trends.
 
