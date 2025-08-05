@@ -49,18 +49,12 @@ git clone https://github.com/your-username/exit-poll-dashboard.git
 cd exit-poll-dashboard
 ```
 
-### 2. Set up environment
-```bash
-python -m venv venv
-source venv/bin/activate   # or venv\Scripts\activate on Windows
-```
-
-### 3. Install dependencies
+### 2. Install dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-### 4. Run the app
+### 3. Run the app
 ```bash
 python app.py
 ```
