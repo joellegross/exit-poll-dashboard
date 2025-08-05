@@ -19,7 +19,7 @@ This dashboard allows interactive exploration of U.S. exit poll data across mult
 
 ## Motivation
 
-Exit polls are a valuable snapshot of voter behavior and political sentiment on election day. However, currently there is no comprehensive data set where you can view repsonses across years. This tool helps to fill that gap. The intended audience of this dashboard is researchers, journalists, and election analysts to aid in our study of how various groups voted across states and time.
+Exit polls are a valuable snapshot of voter behavior and political sentiment on election day. However, currently there is no comprehensive data set where you can view repsonses across years. This tool helps to fill that gap. The intended audience of this dashboard is for researchers, journalists, and election analysts to aid in our understanding of attidudinal changes in the electorate over time.
 
 ## Data Structure
 
