@@ -70,5 +70,5 @@ python app.py
 
 - NBC News Decision Desk & the Exit Poll team
 - Exit poll data from National Election Poll (ABC, CBS, NBC, CNN) and Edison Research
-- Special thanks to Stephanie Perry, Dr. Marc Meredith, and Dr. Sharath Chandra Guntuku (mentors and advisors)
+- Special thanks to Stephanie Perry, Dr. Marc Meredith, and Dr. Sharath Chandra Guntuku
 
