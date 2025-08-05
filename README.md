@@ -22,7 +22,7 @@ This dashboard allows interactive exploration of U.S. exit poll data across mult
 
 Exit polls are a valuable snapshot of voter behavior and political sentiment on election day. However, currently there is no comprehensive data set where you can view repsonses across years. This tool helps to fill that gap. The intended audience of this dashboard is for researchers, journalists, and election analysts to aid in our understanding of attidudinal changes in the electorate over time.
 
-## Data Structure
+## Dashboard Structure
 
 The dashboard uses a structured directory of labeled exit poll data, standardized across:
 
