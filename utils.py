@@ -44,90 +44,164 @@ def get_filtered_index(df, year, election, locality, state, party):
         dff = dff[dff["party"] == party] if party else dff[dff["party"].isnull() | (dff["party"] == "")]
     return dff
 
-def prepare_grouped_data(df, denom, num, mode, orientation, weight_col):
+def prepare_grouped_data(df, denom, num, mode, orientation, weight_col,
+                         hide_missing=True, hide_excluded=True):
+    if df[weight_col].dtype == object:
+        df[weight_col] = pd.to_numeric(df[weight_col], errors='coerce')
+
     if mode == "percent":
-        if df[weight_col].dtype == object:
-            df[weight_col] = pd.to_numeric(df[weight_col], errors='coerce')
-            df = df[df[weight_col].notna()]
-        grouped = df.groupby([denom, num])[weight_col].sum().reset_index()
-        grouped = grouped[
-            grouped[denom].notna() & ~grouped[denom].isin(EXCLUDE_VALUES) &
-            grouped[num].notna() & ~grouped[num].isin(EXCLUDE_VALUES)
-        ]
+        # --- group without dropping NaNs or excluded values ---
+        grouped = (
+            df.groupby([denom, num], dropna=False)[weight_col]
+              .sum()
+              .reset_index()
+        )
+
         key = denom if orientation == "vertical" else num
         grouped[weight_col] = pd.to_numeric(grouped[weight_col], errors="coerce")
-        grouped["Percentage"] = grouped.groupby(key)[weight_col].transform(lambda x: (x / x.sum()) * 100).round(0)
-        return grouped.drop(columns=weight_col), "Percentage"
-    else:
-        grouped = df.groupby([denom, num]).size().reset_index(name="Count")
-        grouped = grouped[
-            grouped[denom].notna() & ~grouped[denom].isin(EXCLUDE_VALUES) &
-            grouped[num].notna() & ~grouped[num].isin(EXCLUDE_VALUES)
-        ]
-        return grouped, "Count"
+
+        # --- compute percentages including NaNs and excluded values ---
+        totals = grouped.groupby(key, dropna=False)[weight_col].transform('sum')
+        grouped["Percentage"] = (grouped[weight_col] / totals * 100).round(0)
+
+        # --- hide excluded + missing only AFTER computation ---
+        mask_excluded = grouped[denom].isin(EXCLUDE_VALUES) | grouped[num].isin(EXCLUDE_VALUES)
+        mask_missing = grouped[denom].isna() | grouped[num].isna()
+
+        final = grouped.copy()
+
+        if hide_excluded:
+            mask_excluded = (
+                    final[denom].isin(EXCLUDE_VALUES) |
+                    final[num].isin(EXCLUDE_VALUES)
+            )
+            final = final.loc[~mask_excluded].copy()
+
+        if hide_missing:
+            mask_missing = final[denom].isna() | final[num].isna()
+            final = final.loc[~mask_missing].copy()
+
+        return final.drop(columns=weight_col), "Percentage"
+
+    else:  # Count mode
+        grouped = (
+            df.groupby([denom, num], dropna=False)
+              .size()
+              .reset_index(name="Count")
+        )
+
+        mask_excluded = grouped[denom].isin(EXCLUDE_VALUES) | grouped[num].isin(EXCLUDE_VALUES)
+        mask_missing = grouped[denom].isna() | grouped[num].isna()
+
+        final = grouped.copy()
+        if hide_excluded:
+            final = final[~mask_excluded]
+        if hide_missing:
+            final = final[~mask_missing]
+
+        return final, "Count"
 
 def create_percent_charts(grouped, denom, num, orientation):
     figures = []
     keys = grouped[denom].unique() if orientation == "vertical" else grouped[num].unique()
-    var_values = grouped[num if orientation == "vertical" else denom].dropna().unique()
+    var_col = num if orientation == "vertical" else denom
+
+    var_values = grouped[var_col].dropna().unique()
 
     # === Candidate-specific color logic ===
-    normalized_party_lookup = {
-        name.lower().strip(): party for name, party in CANDIDATE_PARTY_MAP.items()
-    }
-
-    # Check if the set of variable values mostly look like candidates
-    num_matches = sum(1 for v in var_values if v.lower().strip() in normalized_party_lookup)
-    is_pres_candidate_question = num_matches >= len(var_values) / 2  # majority threshold
+    normalized_party_lookup = {name.lower().strip(): party for name, party in CANDIDATE_PARTY_MAP.items()}
+    num_matches = sum(
+        1 for v in var_values if isinstance(v, str) and v.lower().strip() in normalized_party_lookup
+    )
+    is_pres_candidate_question = num_matches >= max(1, len(var_values) / 2)
 
     if is_pres_candidate_question:
         color_map = {}
         for name in var_values:
-            norm_name = name.lower().strip()
+            norm_name = name.lower().strip() if isinstance(name, str) else str(name).lower().strip()
             party = normalized_party_lookup.get(norm_name, "Other")
             color_map[name] = PARTY_COLORS.get(party, PARTY_COLORS["Other"])
     else:
-        # Default categorical palette
         default_colors = px.colors.qualitative.Set3 + px.colors.qualitative.Set1
-        color_map = {cat: default_colors[i % len(default_colors)] for i, cat in enumerate(sorted(var_values))}
+        color_map = {
+            cat: default_colors[i % len(default_colors)]
+            for i, cat in enumerate(sorted(var_values, key=lambda x: str(x)))
+        }
 
-    for val in keys:
-        filtered = grouped[grouped[denom if orientation == "vertical" else num] == val].copy()
+    # Gray slice settings
+    LEFTOVER_LABEL = "N/A"   # internal placeholder
+    GRAY = "#BDBDBD"
+    color_map[LEFTOVER_LABEL] = GRAY
+
+    for key_val in keys:
+        mask = grouped[denom if orientation == "vertical" else num] == key_val
+        filtered = grouped.loc[mask].copy()
         if filtered.empty:
             continue
-        col = num if orientation == "vertical" else denom
-        filtered[col] = filtered[col].astype(str)
+
+        col = var_col
+        filtered = filtered.dropna(subset=[col]).copy()
+
+        cats_order = sorted([str(v).strip() for v in var_values])
         filtered[col] = filtered[col].astype(str).str.strip()
-        filtered[col] = pd.Categorical(filtered[col], categories=sorted([str(v).strip() for v in var_values]),
-                                       ordered=True)
-        filtered = filtered.dropna(subset=[col])
+        filtered[col] = pd.Categorical(filtered[col], categories=cats_order, ordered=True)
         filtered = filtered.sort_values(by=col)
 
+        subtotal = float(filtered["Percentage"].sum())
+        leftover = max(0.0, round(100.0 - subtotal, 0))
+
+        if leftover > 0:
+            extra = {
+                (denom if orientation == "vertical" else num): key_val,
+                col: LEFTOVER_LABEL,
+                "Percentage": leftover,
+            }
+            filtered = pd.concat([filtered, pd.DataFrame([extra])], ignore_index=True)
+
+        # Build the figure
         fig = px.pie(
             filtered,
             names=col,
             values="Percentage",
             hole=0.5,
-            title=val,
+            title=key_val,
             color=col,
             color_discrete_map=color_map,
             hover_data=[],
-            labels={col: "", "Percentage": "Support"}
         )
+
+        # Create text labels: just numbers, no names. Leftover slice blank.
+        new_text = []
+        for _, row in filtered.iterrows():
+            if row[col] == LEFTOVER_LABEL:
+                new_text.append("")   # hide gray slice text
+            else:
+                new_text.append(f"{int(row['Percentage'])}%")  # just percent number
 
         fig.update_traces(
-            textinfo="percent",
-            texttemplate="%{percent:.0%}",
+            text=new_text,
+            textinfo="text",
             hovertemplate="%{percent:.0%}<extra></extra>",
-            insidetextorientation="auto"
+            showlegend=True,
+            sort=False,
         )
-        fig.update_layout(
-            legend=dict(x=1.2, y=0.5, xanchor='left', orientation='v', font=dict(size=12)),
-            margin=dict(t=50, b=50, l=50, r=150)
-        )
-        figures.append(dcc.Graph(figure=fig, style={'display': 'inline-block', 'width': '32%', 'height': '400px'}))
 
-    return html.Div(figures, style={'display': 'flex', 'flexWrap': 'wrap', 'gap': '20px'})
+        # Hide legend entry for the gray slice
+        for i, trace in enumerate(fig.data):
+             fig.data[i].showlegend = True
+
+        fig.update_layout(
+            legend=dict(x=1.2, y=0.5, xanchor="left", orientation="v", font=dict(size=12)),
+            margin=dict(t=50, b=50, l=50, r=150),
+        )
+
+        figures.append(
+            dcc.Graph(
+                figure=fig, style={"display": "inline-block", "width": "32%", "height": "400px"}
+            )
+        )
+
+    return html.Div(figures, style={"display": "flex", "flexWrap": "wrap", "gap": "20px"})
 
 def create_count_chart(grouped, denom, num, y_col):
     fig = px.bar(
