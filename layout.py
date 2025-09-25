@@ -50,46 +50,50 @@ def create_layout():
                              placeholder="Select a party")
             ]),
 
-            html.Div([
-                html.Label("Aggregation Type"),
-                dcc.RadioItems(
-                    id="display-mode",
-                    options=[
-                        {"label": "Count", "value": "count"},
-                        {"label": "Percentage", "value": "percent"}
-                    ],
-                    value="count",
-                    inline=True
-                )
-            ]),
+
 
             html.Div([
-                html.Label("Orientation Type"),
-                dcc.RadioItems(
-                    id="orientation-mode",
-                    options=[
-                        {"label": "Horizontal", "value": "horizontal"},
-                        {"label": "Vertical", "value": "vertical"}
-                    ],
-                    value="horizontal",
-                    inline=True
-                )
-            ]),
-
-            html.Div([
-                html.Label("(Group By) Column"),
+                html.Label("Select Variable #1"),
                 dcc.Dropdown(id="denominator-dropdown", placeholder="Select a grouping column")
             ]),
 
             html.Div([
-                html.Label("(Breakdown) Column"),
+                html.Label("Select Variable #2"),
                 dcc.Dropdown(id="numerator-dropdown", placeholder="Select a breakdown column")
             ]),
+        ]),
+        html.Div([
+            html.Label("Orientation Type"),
+            dcc.RadioItems(
+                id="orientation-mode",
+                options=[
+                    {"label": "Horizontal", "value": "horizontal"},
+                    {"label": "Vertical", "value": "vertical"}
+                ],
+                value="horizontal",
+                inline=True
+            )
         ]),
 
         html.Br(),
         html.Div(id="groupby-output"),
-
+        html.Br(),
+        html.Div(
+            id="agg-container",
+            children=[
+                html.Hr(),
+                html.Div("Aggregation Type"),
+                dcc.RadioItems(
+                    id="agg-mode",
+                    options=[{"label": "Count", "value": "count"},
+                             {"label": "Percentage", "value": "percent"}],
+                    value="count",
+                    inline=True,
+                ),
+            ],
+            style={"display": "none"},  # hide initially
+        ),
+        html.Br(),
         html.Div(id="groupby-table-container", children=[
             dash_table.DataTable(
                 id="groupby-table",
@@ -99,5 +103,10 @@ def create_layout():
                 style_cell={'textAlign': 'left', 'padding': '5px'},
                 page_size=20,
             )
-        ])
-    ])
+        ]),  # <-- comma here
+
+        html.Div(  # sample size container (below the table)
+            id="sample-size-container",
+            style={"marginTop": "10px", "fontStyle": "italic"}
+        ),
+      ])

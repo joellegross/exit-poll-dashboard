@@ -19,38 +19,50 @@ from utils import (
     get_filtered_index,
     prepare_grouped_data,
     create_percent_charts,
-    create_count_chart,
     format_table_data
 )
 
 def register_callbacks(app, df_path):
     df = pd.read_csv(df_path)
 
+    # Show party only for Primaries; show state when not National
     @app.callback(
         Output("party-container", "style"),
         Output("state-container", "style"),
         Input("election-dropdown", "value"),
-        Input("locality-dropdown", "value")
+        Input("locality-dropdown", "value"),
     )
     def toggle_party_and_state(election_type, locality):
         return (
             {"display": "block"} if election_type == "Primary" else {"display": "none"},
-            {"display": "block"} if locality != "National" else {"display": "none"}
+            {"display": "block"} if locality != "National" else {"display": "none"},
         )
 
+    # Show Aggregation Type only after both columns are chosen and distinct
+    @app.callback(
+        Output("agg-container", "style"),
+        Input("denominator-dropdown", "value"),
+        Input("numerator-dropdown", "value"),
+    )
+    def toggle_agg(denom, num):
+        show = bool(denom) and bool(num) and denom != num
+        return {"display": "block"} if show else {"display": "none"}
+
+    # Populate state options per year/election
     @app.callback(
         Output("state-dropdown", "options"),
         Output("state-dropdown", "value"),
         Input("year-dropdown", "value"),
-        Input("election-dropdown", "value")
+        Input("election-dropdown", "value"),
     )
     def update_state_options(year, election):
         dff = df[(df["year"] == year) & (df["election_folder"] == election)]
         valid_states = dff["state"].dropna()
         valid_states = valid_states[~valid_states.str.upper().eq("NATIONAL")]
         options = [{"label": s, "value": s} for s in sorted(valid_states.unique())]
-        return options, options[0]["value"] if options else None
+        return options, (options[0]["value"] if options else None)
 
+    # Main output callback
     @app.callback(
         Output("denominator-dropdown", "options"),
         Output("denominator-dropdown", "value"),
@@ -59,6 +71,7 @@ def register_callbacks(app, df_path):
         Output("groupby-output", "children"),
         Output("groupby-table", "columns"),
         Output("groupby-table", "data"),
+        Output("sample-size-container", "children"),  # <-- new Output
         Input("year-dropdown", "value"),
         Input("election-dropdown", "value"),
         Input("state-dropdown", "value"),
@@ -66,14 +79,14 @@ def register_callbacks(app, df_path):
         Input("party-dropdown", "value"),
         Input("denominator-dropdown", "value"),
         Input("numerator-dropdown", "value"),
-        Input("display-mode", "value"),
-        Input("orientation-mode", "value")
+        Input("agg-mode", "value"),  # "count" | "percent"
+        Input("orientation-mode", "value"),  # "horizontal" | "vertical"
     )
     def update_outputs(year, election, state, locality, party, denom, num, mode, orientation):
         try:
             dff = get_filtered_index(df, year, election, locality, state, party)
             if dff.empty:
-                return [], None, [], None, html.P("No matching file."), [], []
+                return [], None, [], None, html.P("No matching file."), [], [], ""
 
             filepath = os.path.join(DATA_ROOT, dff.iloc[0]["path"])
             df_file = pd.read_csv(filepath, low_memory=False)
@@ -82,45 +95,71 @@ def register_callbacks(app, df_path):
             weight_col = get_weight_column(df_file)
             valid_cols = get_valid_columns(df_file, weight_col)
 
-            options = sorted([{"label": col, "value": col} for col in valid_cols], key=lambda x: x["label"])
+            options = sorted(
+                [{"label": col, "value": col} for col in valid_cols],
+                key=lambda x: x["label"]
+            )
             denom_val = denom if denom in valid_cols else None
-            num_val = num if num in valid_cols and num != denom_val else None
+            num_val   = num   if (num in valid_cols and num != denom_val) else None
 
             if not denom_val or not num_val:
-                return options, denom_val, options, num_val, html.P("Please select valid columns."), [], []
+                return options, denom_val, options, num_val, html.P("Please select valid columns."), [], [], ""
 
-            grouped, y_col = prepare_grouped_data(df_file, denom_val, num_val, mode, orientation, weight_col)
+            # Get both (counts & percentages), with Total-row appended and filters applied
+            count_df, percent_df = prepare_grouped_data(
+                df=df_file,
+                denom=denom_val,
+                num=num_val,
+                orientation=orientation,
+                weight_col=weight_col,
+                hide_missing=True,
+                hide_excluded=True,
+            )
 
-            # === Show empty message if no respondents meet both criteria ===
-            if grouped.empty:
-                return options, denom_val, options, num_val, html.P("No respondents answered both selected questions.", style={"color": "red"}), [], []
-
+            # Select current view
             if mode == "percent":
-                chart_output = create_percent_charts(grouped, denom_val, num_val, orientation)
+                grouped = percent_df
+                y_col = "Percentage"
             else:
-                chart_output = dcc.Graph(figure=create_count_chart(grouped, denom_val, num_val, y_col))
+                grouped = count_df
+                y_col = "Count"
 
-            grouped_wide, columns, data = format_table_data(grouped, denom_val, num_val, y_col, mode)
+            if grouped.empty:
+                return (
+                    options, denom_val, options, num_val,
+                    html.P("No respondents answered both selected questions.", style={"color": "red"}),
+                    [], [], ""
+                )
 
+            # Charts
+
+            chart_output = create_percent_charts(percent_df, denom_val, num_val, orientation)
+
+            # Table
+            _, columns, data = format_table_data(grouped, denom_val, num_val, y_col, mode)
+
+            # Headings & sample size (joint non-missing)
             denom_q = VARIABLE_METADATA.get(denom_val, {}).get("question", "")
-            num_q = VARIABLE_METADATA.get(num_val, {}).get("question", "")
+            num_q   = VARIABLE_METADATA.get(num_val, {}).get("question", "")
+            q, b = (denom_q, num_q) if orientation == "vertical" else (num_q, denom_q)
 
-            # Updated sample size: based on joint non-missing
-            sample_df = df_file[
-                df_file[denom_val].notna() &
-                df_file[num_val].notna() &
-                ~df_file[denom_val].isin(EXCLUDE_VALUES) &
-                ~df_file[num_val].isin(EXCLUDE_VALUES)
-            ]
+            sample_df = df_file[df_file[denom_val].notna() & df_file[num_val].notna()]
             sample_size = len(sample_df)
+            sample_size_text = (
+                f"Sample size (non-missing): {sample_size:,}" if sample_size else ""
+            )
 
             question_heading = html.Div([
-                html.Div(f"Group by: {denom_q}", style={"fontSize": "22px", "fontWeight": "bold", "marginBottom": "5px"}) if denom_q else html.Div(),
-                html.Div(f"Breakdown by : {num_q}", style={"fontSize": "22px", "fontWeight": "bold", "marginBottom": "5px"}) if num_q else html.Div(),
-                html.Div(f"Sample size (non-missing): {sample_size:,}", style={"fontSize": "20px", "fontStyle": "italic"}) if sample_size else html.Div()
+                html.Div(f"{q}", style={"fontSize": "22px", "fontWeight": "bold", "marginBottom": "5px"}) if q else html.Div(),
+                html.Div(f"Broken down by: {b}", style={"fontSize": "22px", "fontWeight": "bold", "marginBottom": "5px"}) if b else html.Div()
             ])
 
-            return options, denom_val, options, num_val, html.Div([question_heading, chart_output]), columns, data
+            return (
+                options, denom_val, options, num_val,
+                html.Div([question_heading, chart_output]),
+                columns, data,
+                sample_size_text
+            )
 
         except Exception as e:
-            return [], None, [], None, html.P(f"Error: {e}", style={"color": "red"}), [], []
+            return [], None, [], None, html.P(f"Error: {e}"), [], [], ""
