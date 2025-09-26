@@ -51,29 +51,25 @@ def create_layout():
             ]),
 
 
-
             html.Div([
                 html.Label("Select Variable #1"),
-                dcc.Dropdown(id="denominator-dropdown", placeholder="Select a grouping column")
+                dcc.Dropdown(id="var1-dropdown", placeholder="Select first variable")
             ]),
 
             html.Div([
                 html.Label("Select Variable #2"),
-                dcc.Dropdown(id="numerator-dropdown", placeholder="Select a breakdown column")
+                dcc.Dropdown(id="var2-dropdown", placeholder="Select second variable")
             ]),
         ]),
-        html.Div([
-            html.Label("Orientation Type"),
-            dcc.RadioItems(
-                id="orientation-mode",
-                options=[
-                    {"label": "Horizontal", "value": "horizontal"},
-                    {"label": "Vertical", "value": "vertical"}
-                ],
-                value="horizontal",
-                inline=True
-            )
-        ]),
+        html.Div(
+            id="denominator-choice-container",
+            children=[
+                html.Label("Select denominator:"),
+                dcc.RadioItems(id="denom-choice", inline=True)
+            ],
+            style={"display": "none"}
+        ),
+        html.Div(id="charts"),
 
         html.Br(),
         html.Div(id="groupby-output"),

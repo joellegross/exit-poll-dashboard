@@ -44,115 +44,88 @@ def get_filtered_index(df, year, election, locality, state, party):
         dff = dff[dff["party"] == party] if party else dff[dff["party"].isnull() | (dff["party"] == "")]
     return dff
 
-def prepare_grouped_data(df, denom, num, orientation, weight_col,
-                              hide_missing=True, hide_excluded=True):
-    """
-    Returns: (count_df, percent_df)
-      - count_df: unweighted counts by (denom, num) + a 'Total' row (overall breakout by num)
-      - percent_df: weighted percentages by (denom, num) + a 'Total' row (overall breakout by num)
-    Assumes EXCLUDE_VALUES is defined in the outer scope.
-    """
+def prepare_grouped_data(df, denom, num, weight_col=None, hide_missing=True, hide_excluded=True):
+    dff = df.copy()
 
-    # 0) Ensure weights are numeric
-    if df[weight_col].dtype == object:
-        df = df.copy()
-        df[weight_col] = pd.to_numeric(df[weight_col], errors='coerce')
+    # Optional filters
+    if hide_missing:
+        dff = dff[dff[denom].notna() & dff[num].notna()]
+    if hide_excluded and 'EXCLUDED_FLAG' in dff.columns:
+        dff = dff[~dff['EXCLUDED_FLAG'].astype(bool)]
 
-    # 1) Base grouped frames
-    grouped_w = (
-        df.groupby([denom, num], dropna=False)[weight_col]
-          .sum()
-          .reset_index()
-    )
-    grouped_c = (
-        df.groupby([denom, num], dropna=False)
-          .size()
-          .reset_index(name="Count")
-    )
+    # Weights
+    use_weights = weight_col and weight_col in dff.columns
+    if use_weights:
+        dff = dff.copy()
+        dff[weight_col] = pd.to_numeric(dff[weight_col], errors="coerce").fillna(0.0)
 
-    # 2) Percentages (weighted) — normalize within key
-    key = denom if orientation == "vertical" else num
-    totals = grouped_w.groupby(key, dropna=False)[weight_col].transform("sum")
-    percent_df = grouped_w.copy()
-    percent_df["Percentage"] = (percent_df[weight_col] / totals * 100).round(0)
+    # --- Counts
+    if use_weights:
+        grouped_w = (
+            dff.groupby([denom, num], dropna=False)[weight_col]
+               .sum()
+               .reset_index()
+               .rename(columns={weight_col: "WeightSum"})
+        )
+        count_df = grouped_w.rename(columns={"WeightSum": "Count"})
+    else:
+        count_df = (
+            dff.groupby([denom, num], dropna=False)
+               .size()
+               .reset_index(name="Count")
+        )
 
-    # 3) Overall breakout ("Total" row) for percentages and counts
-    overall_w = (
-        df.groupby(num, dropna=False)[weight_col]
-          .sum()
-          .reset_index()
-    )
-    overall_w["Percentage"] = (
-        overall_w[weight_col] / overall_w[weight_col].sum() * 100
-    ).round(0)
+    # --- Percentages (normalize within denom)
+    totals = count_df.groupby(denom, dropna=False)["Count"].transform("sum")
+    percent_df = count_df.copy()
+    percent_df["Percentage"] = (percent_df["Count"] / totals * 100).fillna(0)
 
+    # --- Overall “Total” rows ---
     overall_c = (
-        df.groupby(num, dropna=False)
-          .size()
-          .reset_index(name="Count")
+        count_df.groupby(num, dropna=False)["Count"].sum().reset_index()
     )
-
-    # If denom is categorical, safely add 'Total' as a category
-    def _inject_total_category(base_df, colname):
-        if pd.api.types.is_categorical_dtype(base_df[colname]):
-            base_df[colname] = base_df[colname].cat.add_categories(["Total"])
-        return base_df
-
-    percent_df = _inject_total_category(percent_df, denom)
-    grouped_c   = _inject_total_category(grouped_c, denom)
-
-    # Label total rows
-    overall_w[denom] = "Total"
     overall_c[denom] = "Total"
 
-    # Align columns/order & append totals
-    percent_df = percent_df.reindex(columns=[denom, num, weight_col, "Percentage"])
-    overall_w  = overall_w.reindex(columns=[denom, num, weight_col, "Percentage"])
-    percent_df = pd.concat([percent_df, overall_w], ignore_index=True)
+    overall_p = overall_c.copy()
+    overall_p["Percentage"] = (
+        overall_p["Count"] / overall_p["Count"].sum() * 100
+    ).fillna(0)
 
-    count_df = grouped_c.reindex(columns=[denom, num, "Count"])
-    overall_c = overall_c.reindex(columns=[denom, num, "Count"])
-    count_df = pd.concat([count_df, overall_c], ignore_index=True)
+    # Append “Total”
+    count_df  = pd.concat([count_df, overall_c], ignore_index=True)
+    percent_df = pd.concat([percent_df, overall_p], ignore_index=True)
 
-    # 4) Apply filters AFTER computation (and reindex masks to the current frame)
-    # Build masks for each frame separately (avoids reindex warnings)
-    def _apply_filters(frame):
-        mask_excluded = frame[denom].isin(EXCLUDE_VALUES) | frame[num].isin(EXCLUDE_VALUES)
-        mask_missing  = frame[denom].isna() | frame[num].isna()
-
-        out = frame
-        if hide_excluded:
-            out = out[~mask_excluded.reindex(out.index, fill_value=False)]
-        if hide_missing:
-            out = out[~mask_missing.reindex(out.index, fill_value=False)]
-        return out
-
-    percent_df = _apply_filters(percent_df)
-    count_df  = _apply_filters(count_df)
-
-    # 5) Keep 'Total' at the bottom (if present)
+    # Keep “Total” last
     def _sort_total_last(frame):
         is_total = (frame[denom].astype(str) == "Total").astype(int)
         return (frame.assign(__is_total=is_total)
-                    .sort_values("__is_total")
-                    .drop(columns="__is_total")
-                    .reset_index(drop=True))
+                     .sort_values(["__is_total", denom, num])
+                     .drop(columns="__is_total")
+                     .reset_index(drop=True))
 
-    percent_df = _sort_total_last(percent_df)
-    count_df   = _sort_total_last(count_df)
+    return _sort_total_last(count_df), _sort_total_last(percent_df)
 
-    return count_df, percent_df
+def create_percent_charts(percent_df, denom, num):
+    """
+    Build a grid of donut charts. One chart per unique value of `denom`,
+    slices represent categories of `num`. Assumes `percent_df` already
+    contains rows filtered/aggregated to percentages that sum to <= 100 within each denom.
+    """
+    if denom is None or num is None:
+        return html.Div()
 
-def create_percent_charts(percent_df, denom, num, orientation):
-
-    grouped = percent_df[percent_df[denom].astype(str) != "Total"]
+    # Drop any total-row from denom
+    grouped = percent_df[percent_df[denom].astype(str) != "Total"].copy()
     figures = []
-    keys = grouped[denom].unique() if orientation == "vertical" else grouped[num].unique()
-    var_col = num if orientation == "vertical" else denom
 
+    # Keys: one chart per denom value
+    keys = grouped[denom].dropna().unique()
+    var_col = num  # categories live here
+
+    # Unique categories across whole dataset (for consistent color mapping/order)
     var_values = grouped[var_col].dropna().unique()
 
-    # === Candidate-specific color logic ===
+    # === Candidate-specific color logic (unchanged) ===
     normalized_party_lookup = {name.lower().strip(): party for name, party in CANDIDATE_PARTY_MAP.items()}
     num_matches = sum(
         1 for v in var_values if isinstance(v, str) and v.lower().strip() in normalized_party_lookup
@@ -173,36 +146,33 @@ def create_percent_charts(percent_df, denom, num, orientation):
         }
 
     # Gray slice settings
-    LEFTOVER_LABEL = "N/A"   # internal placeholder
+    LEFTOVER_LABEL = "N/A"
     GRAY = "#BDBDBD"
     color_map[LEFTOVER_LABEL] = GRAY
 
+    # Chart per denom key
     for key_val in keys:
-        mask = grouped[denom if orientation == "vertical" else num] == key_val
-        filtered = grouped.loc[mask].copy()
+        filtered = grouped.loc[grouped[denom] == key_val].copy()
         if filtered.empty:
             continue
 
         col = var_col
         filtered = filtered.dropna(subset=[col]).copy()
 
+        # Stable category order across charts
         cats_order = sorted([str(v).strip() for v in var_values])
         filtered[col] = filtered[col].astype(str).str.strip()
         filtered[col] = pd.Categorical(filtered[col], categories=cats_order, ordered=True)
         filtered = filtered.sort_values(by=col)
 
+        # Pad to 100% with a gray slice if needed
         subtotal = float(filtered["Percentage"].sum())
         leftover = max(0.0, round(100.0 - subtotal, 0))
-
         if leftover > 0:
-            extra = {
-                (denom if orientation == "vertical" else num): key_val,
-                col: LEFTOVER_LABEL,
-                "Percentage": leftover,
-            }
+            extra = {denom: key_val, col: LEFTOVER_LABEL, "Percentage": leftover}
             filtered = pd.concat([filtered, pd.DataFrame([extra])], ignore_index=True)
 
-        # Build the figure
+        # Donut
         fig = px.pie(
             filtered,
             names=col,
@@ -214,25 +184,17 @@ def create_percent_charts(percent_df, denom, num, orientation):
             hover_data=[],
         )
 
-        # Create text labels: just numbers, no names. Leftover slice blank.
-        new_text = []
-        for _, row in filtered.iterrows():
-            if row[col] == LEFTOVER_LABEL:
-                new_text.append("")   # hide gray slice text
-            else:
-                new_text.append(f"{int(row['Percentage'])}%")  # just percent number
+        # Only numbers as labels; hide gray slice text
+        text_labels = ["" if r[col] == LEFTOVER_LABEL else f"{int(r['Percentage'])}%"
+                       for _, r in filtered.iterrows()]
 
         fig.update_traces(
-            text=new_text,
+            text=text_labels,
             textinfo="text",
             hovertemplate="%{percent:.0%}<extra></extra>",
             showlegend=True,
             sort=False,
         )
-
-        # Hide legend entry for the gray slice
-        for i, trace in enumerate(fig.data):
-             fig.data[i].showlegend = True
 
         fig.update_layout(
             legend=dict(x=1.2, y=0.5, xanchor="left", orientation="v", font=dict(size=12)),
@@ -240,9 +202,7 @@ def create_percent_charts(percent_df, denom, num, orientation):
         )
 
         figures.append(
-            dcc.Graph(
-                figure=fig, style={"display": "inline-block", "width": "32%", "height": "400px"}
-            )
+            dcc.Graph(figure=fig, style={"display": "inline-block", "width": "32%", "height": "400px"})
         )
 
     return html.Div(figures, style={"display": "flex", "flexWrap": "wrap", "gap": "20px"})
@@ -250,6 +210,7 @@ def create_percent_charts(percent_df, denom, num, orientation):
 
 def format_table_data(grouped, denom, num, y_col, mode):
     grouped_wide = grouped.pivot(index=num, columns=denom, values=y_col)
+
     if mode == "percent":
         for col in grouped_wide.columns:
             if pd.api.types.is_numeric_dtype(grouped_wide[col]):
@@ -257,6 +218,11 @@ def format_table_data(grouped, denom, num, y_col, mode):
                     grouped_wide[col].replace([np.inf, -np.inf], np.nan)
                                      .fillna(0).round(0).astype(int).astype(str) + "%"
                 )
+    else:  # mode == "count"
+        for col in grouped_wide.columns:
+            if pd.api.types.is_numeric_dtype(grouped_wide[col]):
+                grouped_wide[col] = grouped_wide[col].round(0).astype(int)
+
     columns = [{"name": str(col), "id": str(col)} for col in grouped_wide.reset_index().columns]
     data = grouped_wide.reset_index().to_dict("records")
     return grouped_wide, columns, data
