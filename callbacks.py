@@ -150,7 +150,6 @@ def register_callbacks(app, df_path):
 
         weight_col = get_weight_column(df_file)
 
-        # Prepare grouped (counts and percents)
         count_df, percent_df = prepare_grouped_data(
             df=df_file,
             denom=denom,

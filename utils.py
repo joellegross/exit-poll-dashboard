@@ -106,11 +106,7 @@ def prepare_grouped_data(df, denom, num, weight_col=None, hide_missing=True, hid
     return _sort_total_last(count_df), _sort_total_last(percent_df)
 
 def create_percent_charts(percent_df, denom, num):
-    """
-    Build a grid of donut charts. One chart per unique value of `denom`,
-    slices represent categories of `num`. Assumes `percent_df` already
-    contains rows filtered/aggregated to percentages that sum to <= 100 within each denom.
-    """
+
     if denom is None or num is None:
         return html.Div()
 
@@ -209,20 +205,31 @@ def create_percent_charts(percent_df, denom, num):
 
 
 def format_table_data(grouped, denom, num, y_col, mode):
-    grouped_wide = grouped.pivot(index=num, columns=denom, values=y_col)
+    grouped_wide = (
+        grouped
+        .pivot_table(index=num, columns=denom, values=y_col, aggfunc="sum")
+    )
+
+    grouped_wide = grouped_wide.apply(pd.to_numeric, errors="coerce") \
+                               .replace([np.inf, -np.inf], np.nan)
 
     if mode == "percent":
-        for col in grouped_wide.columns:
-            if pd.api.types.is_numeric_dtype(grouped_wide[col]):
-                grouped_wide[col] = (
-                    grouped_wide[col].replace([np.inf, -np.inf], np.nan)
-                                     .fillna(0).round(0).astype(int).astype(str) + "%"
-                )
-    else:  # mode == "count"
-        for col in grouped_wide.columns:
-            if pd.api.types.is_numeric_dtype(grouped_wide[col]):
-                grouped_wide[col] = grouped_wide[col].round(0).astype(int)
+        grouped_wide = grouped_wide.fillna(0).round(0).astype("Int64")
+        grouped_wide = grouped_wide.astype(str) + "%"
+    else:
+        grouped_wide = grouped_wide.fillna(0).round(0).astype("Int64")
 
-    columns = [{"name": str(col), "id": str(col)} for col in grouped_wide.reset_index().columns]
-    data = grouped_wide.reset_index().to_dict("records")
+    df_out = grouped_wide.reset_index()
+    df_out = df_out.where(pd.notna(df_out), None)
+    if "Omit" in df_out:
+        df_out.drop('Omit', axis=1, inplace=True)
+
+    other_columns = [col for col in df_out.columns if col != "Total"]
+    new_column_order = other_columns + ["Total"]
+
+    df_out = df_out[new_column_order]
+
+    columns = [{"name": str(c), "id": str(c)} for c in df_out.columns]
+    data = df_out.to_dict("records")
+
     return grouped_wide, columns, data
