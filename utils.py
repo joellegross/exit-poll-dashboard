@@ -44,19 +44,18 @@ def get_filtered_index(df, year, election, locality, state, party):
         dff = dff[dff["party"] == party] if party else dff[dff["party"].isnull() | (dff["party"] == "")]
     return dff
 
-def apply_condition_filter(df, cond_var=None, cond_value=None):
-    """
-    If cond_var and cond_value provided, return df[cond_var] == cond_value.
-    Otherwise, return df unchanged.
-    """
-    if not cond_var or cond_value in (None, "__NO_FILTER__"):
-        return df
-    try:
-        return df[df[cond_var] == cond_value]
-    except Exception:
-        left = df[cond_var].astype(str).str.strip()
-        right = str(cond_value).strip()
-        return df[left == right]
+def apply_multiple_filters(df,filters):
+
+    dff = df.copy()
+    if not filters:
+        return dff
+    for f in filters:
+        var = f.get("var")
+        val = f.get("value")
+        if not var or val is None:
+            continue
+        dff = dff[dff[var].astype(str).str.strip() == str(val).strip()]
+    return dff
 
 def prepare_grouped_data(df, denom, num, weight_col=None, hide_missing=True, hide_excluded=True):
     dff = df.copy()

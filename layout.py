@@ -61,16 +61,23 @@ def create_layout():
                 dcc.Dropdown(id="var2-dropdown", placeholder="Select second variable")
             ]),
         ]),
-
         html.Hr(),
         html.Div([
-            html.Div([
-                html.Button("+ Add filter", id="add-filter", n_clicks=0, style={"marginLeft": "10px"}),
-            ], style={"display": "flex", "alignItems": "center", "gap": "8px"}),
-            html.Div(id="filters-container", children=[], style={"marginTop": "10px"}),
-            dcc.Store(id="filters-store", data=[]),
-            dcc.Store(id="filters-next-id", data=0),
-        ]),
+            html.Label("Condition on (optional)"),
+            dcc.Dropdown(
+                id="filter-var-dropdown",
+                options=[],
+                value=None,
+                placeholder="Choose a variable",
+            ),
+            dcc.Dropdown(
+                id="filter-value-dropdown",
+                options=[],
+                value=None,
+                placeholder="Choose a value",
+            ),
+            dcc.Store(id="filters-store", data={}),
+        ], style={"maxWidth": "520px"}),
 
         html.Div(
             id="denominator-choice-container",

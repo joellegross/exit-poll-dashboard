@@ -13,6 +13,7 @@ with open(variable_metadata_path, "r", encoding="utf-8") as f:
     VARIABLE_METADATA = json.load(f)
 
 from utils import (
+    EXCLUDE_VALUES,
     get_weight_column,
     get_valid_columns,
     get_filtered_index,
@@ -21,12 +22,12 @@ from utils import (
     format_table_data,
     create_solo_chart,
     prepare_solo_data,
-    format_solo_table
+    format_solo_table,
+    apply_multiple_filters
 )
 
 def register_callbacks(app, df_path):
     df = pd.read_csv(df_path)
-
     @app.callback(
         Output("party-container", "style"),
         Output("state-container", "style"),
@@ -84,7 +85,70 @@ def register_callbacks(app, df_path):
 
         return opts, var1_val, opts, var2_val
 
-    # --- B) Radio visibility + labels from the two selected vars (NO DROPDOWN OUTPUTS) ---
+    @app.callback(
+        Output("filter-var-dropdown", "options"),
+        Output("filter-var-dropdown", "value"),
+        Input("year-dropdown", "value"),
+        Input("election-dropdown", "value"),
+        Input("state-dropdown", "value"),
+        Input("locality-dropdown", "value"),
+        Input("party-dropdown", "value"),
+        State("filter-var-dropdown", "value"),
+    )
+    def setup_filter_var(year, election, state, locality, party, current):
+        dff = get_filtered_index(df, year, election, locality, state, party)
+        if dff.empty:
+            return [], None
+
+        filepath = os.path.join(DATA_ROOT, dff.iloc[0]["path"])
+        df_file = pd.read_csv(filepath, low_memory=False)
+        df_file.columns = [c.upper().strip() for c in df_file.columns]
+
+        weight_col = get_weight_column(df_file)
+        valid_cols = get_valid_columns(df_file, weight_col)
+
+        # If you prefer a “no filter” choice, keep it in the list.
+        # Use None as value (Dash supports it).
+        options = (
+                [{"label": "— No filter —", "value": None}] +
+                [{"label": c, "value": c} for c in sorted(valid_cols)]
+        )
+
+        value = current if current in valid_cols else None
+        return options, value
+
+    @app.callback(
+        Output("filter-value-dropdown", "options"),
+        Output("filter-value-dropdown", "value"),
+        Input("filter-var-dropdown", "value"),  # drives value options
+        Input("year-dropdown", "value"),
+        Input("election-dropdown", "value"),
+        Input("state-dropdown", "value"),
+        Input("locality-dropdown", "value"),
+        Input("party-dropdown", "value"),
+        State("filter-value-dropdown", "value"),
+        prevent_initial_call=True
+    )
+    def setup_filter_value(filter_var, year, election, state, locality, party, current_value):
+        if not filter_var:
+            return [], None
+
+        dff = get_filtered_index(df, year, election, locality, state, party)
+        if dff.empty:
+            return [], None
+
+        filepath = os.path.join(DATA_ROOT, dff.iloc[0]["path"])
+        df_file = pd.read_csv(filepath, low_memory=False)
+        df_file.columns = [c.upper().strip() for c in df_file.columns]
+
+        values = df_file[filter_var].dropna().unique().tolist()
+        # Optional cleanup to hide special categories you don’t want users to select
+        values = [v for v in values if v not in EXCLUDE_VALUES]
+
+        options = [{"label": str(v), "value": v} for v in sorted(values, key=lambda x: str(x))]
+        value = current_value if current_value in values else None
+        return options, value
+
     @app.callback(
         Output("denominator-choice-container", "style"),
         Output("denom-choice", "options"),
@@ -124,18 +188,22 @@ def register_callbacks(app, df_path):
         Input("state-dropdown", "value"),
         Input("locality-dropdown", "value"),
         Input("party-dropdown", "value"),
-        Input("agg-mode", "value"),            # "count" | "percent"
-        Input("denom-choice", "value"),    # <-- radio as INPUT so toggling re-renders
+        Input("agg-mode", "value"),  # "count" | "percent"
+        Input("denom-choice", "value"),
         Input("var1-dropdown", "value"),
         Input("var2-dropdown", "value"),
+        State("filters-store", "data"),
     )
-    def render_outputs(year, election, state, locality, party, mode, denom_choice, var1, var2):
-        # Figure out selection mode
+
+    def render_outputs(year, election, state, locality, party, mode, denom_choice,
+                       var1, var2, filters):
+
+        # --- Which mode are we in? ---
         two_vars = bool(var1) and bool(var2) and (var1 != var2)
         one_var = (bool(var1) ^ bool(var2))
         solo_var = var1 if (var1 and not var2) else (var2 if (var2 and not var1) else None)
 
-        # Find the file once
+        # --- Load file ---
         dff = get_filtered_index(df, year, election, locality, state, party)
         if dff.empty:
             return html.P("No matching file."), [], [], ""
@@ -143,43 +211,34 @@ def register_callbacks(app, df_path):
         filepath = os.path.join(DATA_ROOT, dff.iloc[0]["path"])
         df_file = pd.read_csv(filepath, low_memory=False)
         df_file.columns = [c.upper().strip() for c in df_file.columns]
+
+        # --- Apply multiple filters ---
+        df_file = apply_multiple_filters(df_file, filters)
         weight_col = get_weight_column(df_file)
 
-        # --- SOLO VARIABLE MODE ---
+        # === SOLO VARIABLE ===
         if one_var and solo_var:
-            count_df, percent_df = prepare_solo_data(
-                df=df_file,
-                var=solo_var,
-                weight_col=weight_col,
-                hide_missing=True,
-                hide_excluded=True,
-            )
+            count_df, percent_df = prepare_solo_data(df_file, solo_var, weight_col, True, True)
             grouped = percent_df if mode == "percent" else count_df
             y_col = "Percentage" if mode == "percent" else "Count"
 
             if grouped.empty:
                 return html.P(f"No respondents answered {solo_var}.", style={"color": "red"}), [], [], ""
 
-            # Chart (donut pie)
             chart_output = create_solo_chart(percent_df, solo_var)
-
-            # Table
             columns, data = format_solo_table(grouped, solo_var, y_col, mode)
 
-            # Heading & sample size
             solo_q = VARIABLE_METADATA.get(solo_var, {}).get("question", "")
             sample_size = int(df_file[solo_var].notna().sum())
             sample_size_text = f"Sample size (non-missing): {sample_size:,}" if sample_size else ""
 
             heading = html.Div([
-                html.Div(
-                    f"{solo_q}",
-                    style={"fontSize": "22px", "fontWeight": "bold", "marginBottom": "5px"}
-                ) if solo_q else html.Div()
+                html.Div(f"{solo_q}", style={"fontSize": "22px", "fontWeight": "bold", "marginBottom": "5px"})
             ])
 
             return html.Div([heading, chart_output]), columns, data, sample_size_text
 
+        # === TWO VARIABLES ===
         if two_vars:
             if denom_choice == "var1_den":
                 denom, num = var1, var2
@@ -191,28 +250,16 @@ def register_callbacks(app, df_path):
             if not (denom and num and denom != num):
                 return [], [], [], []
 
-            count_df, percent_df = prepare_grouped_data(
-                df=df_file,
-                denom=denom,
-                num=num,
-                weight_col=weight_col,
-                hide_missing=True,
-                hide_excluded=True,
-            )
-
+            count_df, percent_df = prepare_grouped_data(df_file, denom, num, weight_col, True, True)
             grouped = percent_df if mode == "percent" else count_df
             y_col = "Percentage" if mode == "percent" else "Count"
 
             if grouped.empty:
                 return html.P("No respondents answered both selected questions.", style={"color": "red"}), [], [], ""
 
-            # Charts
             chart_output = create_percent_charts(percent_df, denom, num)
-
-            # Table
             _, columns, data = format_table_data(grouped, denom, num, y_col, mode)
 
-            # Headings & sample size
             denom_q = VARIABLE_METADATA.get(denom, {}).get("question", "")
             num_q = VARIABLE_METADATA.get(num, {}).get("question", "")
 
@@ -221,17 +268,13 @@ def register_callbacks(app, df_path):
             sample_size_text = f"Sample size (non-missing): {sample_size:,}" if sample_size else ""
 
             question_heading = html.Div([
-                html.Div(
-                    f"{denom_q}",
-                    style={"fontSize": "22px", "fontWeight": "bold", "marginBottom": "5px"}
-                ) if denom_q else html.Div(),
-                html.Div(
-                    f"Broken down by: {num_q}",
-                    style={"fontSize": "22px", "fontWeight": "bold", "marginBottom": "5px"}
-                ) if num_q else html.Div()
+                html.Div(f"{denom_q}", style={"fontSize": "22px", "fontWeight": "bold",
+                                              "marginBottom": "5px"}) if denom_q else html.Div(),
+                html.Div(f"Broken down by: {num_q}", style={"fontSize": "22px", "fontWeight": "bold",
+                                                            "marginBottom": "5px"}) if num_q else html.Div()
             ])
 
             return html.Div([question_heading, chart_output]), columns, data, sample_size_text
 
-        # --- Neither or invalid selection ---
+        # === Nothing selected ===
         return [], [], [], []
