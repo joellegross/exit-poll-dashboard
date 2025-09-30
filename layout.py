@@ -65,7 +65,6 @@ def create_layout():
         html.Hr(),
         html.Div([
             html.Div([
-                html.Strong("Filters (optional)"),
                 html.Button("+ Add filter", id="add-filter", n_clicks=0, style={"marginLeft": "10px"}),
             ], style={"display": "flex", "alignItems": "center", "gap": "8px"}),
             html.Div(id="filters-container", children=[], style={"marginTop": "10px"}),
