@@ -8,7 +8,6 @@ import json
 
 DATA_ROOT = os.path.join(os.path.dirname(__file__), "data")
 
-
 variable_metadata_path = os.path.join("data", "master_variable_index_enhanced.json")
 with open(variable_metadata_path, "r", encoding="utf-8") as f:
     VARIABLE_METADATA = json.load(f)
@@ -19,7 +18,10 @@ from utils import (
     get_filtered_index,
     prepare_grouped_data,
     create_percent_charts,
-    format_table_data
+    format_table_data,
+    create_solo_chart,
+    prepare_solo_data,
+    format_solo_table
 )
 
 def register_callbacks(app, df_path):
@@ -106,8 +108,10 @@ def register_callbacks(app, df_path):
         Input("var1-dropdown", "value"),
         Input("var2-dropdown", "value"),
     )
-    def toggle_agg(denom, num):
-        show = bool(denom) and bool(num) and denom != num
+    def toggle_agg(var1, var2):
+        two_vars = bool(var1) and bool(var2) and (var1 != var2)
+        one_var = (bool(var1) ^ bool(var2))  # exactly one selected
+        show = one_var or two_vars
         return {"display": "block"} if show else {"display": "none"}
 
     @app.callback(
@@ -126,20 +130,12 @@ def register_callbacks(app, df_path):
         Input("var2-dropdown", "value"),
     )
     def render_outputs(year, election, state, locality, party, mode, denom_choice, var1, var2):
+        # Figure out selection mode
+        two_vars = bool(var1) and bool(var2) and (var1 != var2)
+        one_var = (bool(var1) ^ bool(var2))
+        solo_var = var1 if (var1 and not var2) else (var2 if (var2 and not var1) else None)
 
-        if denom_choice == "var1_den":
-            denom, num = var1, var2
-            orientation = "vertical"  # keep helpers happy
-        elif denom_choice == "var2_den":
-            denom, num = var2, var1
-            orientation = "horizontal"
-        else:
-            denom = num = orientation = None  # invalid / not ready
-
-        # Require selections
-        if not (denom and num and denom != num and orientation):
-            raise PreventUpdate
-
+        # Find the file once
         dff = get_filtered_index(df, year, election, locality, state, party)
         if dff.empty:
             return html.P("No matching file."), [], [], ""
@@ -147,44 +143,95 @@ def register_callbacks(app, df_path):
         filepath = os.path.join(DATA_ROOT, dff.iloc[0]["path"])
         df_file = pd.read_csv(filepath, low_memory=False)
         df_file.columns = [c.upper().strip() for c in df_file.columns]
-
         weight_col = get_weight_column(df_file)
 
-        count_df, percent_df = prepare_grouped_data(
-            df=df_file,
-            denom=denom,
-            num=num,
-            weight_col=weight_col,
-            hide_missing=True,
-            hide_excluded=True,
-        )
+        # --- SOLO VARIABLE MODE ---
+        if one_var and solo_var:
+            count_df, percent_df = prepare_solo_data(
+                df=df_file,
+                var=solo_var,
+                weight_col=weight_col,
+                hide_missing=True,
+                hide_excluded=True,
+            )
+            grouped = percent_df if mode == "percent" else count_df
+            y_col = "Percentage" if mode == "percent" else "Count"
 
-        grouped = percent_df if mode == "percent" else count_df
-        y_col = "Percentage" if mode == "percent" else "Count"
+            if grouped.empty:
+                return html.P(f"No respondents answered {solo_var}.", style={"color": "red"}), [], [], ""
 
-        if grouped.empty:
-            return html.P("No respondents answered both selected questions.", style={"color": "red"}), [], [], ""
+            # Chart (donut pie)
+            chart_output = create_solo_chart(percent_df, solo_var)
 
-        # Charts
-        chart_output = create_percent_charts(percent_df, denom, num)
+            # Table
+            columns, data = format_solo_table(grouped, solo_var, y_col, mode)
 
-        # Table
-        _, columns, data = format_table_data(grouped, denom, num, y_col, mode)
+            # Heading & sample size
+            solo_q = VARIABLE_METADATA.get(solo_var, {}).get("question", "")
+            sample_size = int(df_file[solo_var].notna().sum())
+            sample_size_text = f"Sample size (non-missing): {sample_size:,}" if sample_size else ""
 
-        # Headings & sample size
-        denom_q = VARIABLE_METADATA.get(denom, {}).get("question", "")
-        num_q = VARIABLE_METADATA.get(num, {}).get("question", "")
-        q, b = (denom_q, num_q) if orientation == "vertical" else (num_q, denom_q)
+            heading = html.Div([
+                html.Div(
+                    f"{solo_q}",
+                    style={"fontSize": "22px", "fontWeight": "bold", "marginBottom": "5px"}
+                ) if solo_q else html.Div()
+            ])
 
-        sample_df = df_file[df_file[denom].notna() & df_file[num].notna()]
-        sample_size = len(sample_df)
-        sample_size_text = f"Sample size (non-missing): {sample_size:,}" if sample_size else ""
+            return html.Div([heading, chart_output]), columns, data, sample_size_text
 
-        question_heading = html.Div([
-            html.Div(f"{q}",
-                     style={"fontSize": "22px", "fontWeight": "bold", "marginBottom": "5px"}) if q else html.Div(),
-            html.Div(f"Broken down by: {b}",
-                     style={"fontSize": "22px", "fontWeight": "bold", "marginBottom": "5px"}) if b else html.Div()
-        ])
+        if two_vars:
+            if denom_choice == "var1_den":
+                denom, num = var1, var2
+            elif denom_choice == "var2_den":
+                denom, num = var2, var1
+            else:
+                denom = num = None
 
-        return html.Div([question_heading, chart_output]), columns, data, sample_size_text
+            if not (denom and num and denom != num):
+                return [], [], [], []
+
+            count_df, percent_df = prepare_grouped_data(
+                df=df_file,
+                denom=denom,
+                num=num,
+                weight_col=weight_col,
+                hide_missing=True,
+                hide_excluded=True,
+            )
+
+            grouped = percent_df if mode == "percent" else count_df
+            y_col = "Percentage" if mode == "percent" else "Count"
+
+            if grouped.empty:
+                return html.P("No respondents answered both selected questions.", style={"color": "red"}), [], [], ""
+
+            # Charts
+            chart_output = create_percent_charts(percent_df, denom, num)
+
+            # Table
+            _, columns, data = format_table_data(grouped, denom, num, y_col, mode)
+
+            # Headings & sample size
+            denom_q = VARIABLE_METADATA.get(denom, {}).get("question", "")
+            num_q = VARIABLE_METADATA.get(num, {}).get("question", "")
+
+            sample_df = df_file[df_file[denom].notna() & df_file[num].notna()]
+            sample_size = len(sample_df)
+            sample_size_text = f"Sample size (non-missing): {sample_size:,}" if sample_size else ""
+
+            question_heading = html.Div([
+                html.Div(
+                    f"{denom_q}",
+                    style={"fontSize": "22px", "fontWeight": "bold", "marginBottom": "5px"}
+                ) if denom_q else html.Div(),
+                html.Div(
+                    f"Broken down by: {num_q}",
+                    style={"fontSize": "22px", "fontWeight": "bold", "marginBottom": "5px"}
+                ) if num_q else html.Div()
+            ])
+
+            return html.Div([question_heading, chart_output]), columns, data, sample_size_text
+
+        # --- Neither or invalid selection ---
+        return [], [], [], []

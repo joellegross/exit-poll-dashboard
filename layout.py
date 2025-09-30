@@ -2,6 +2,7 @@ from dash import dcc, html, dash_table
 import pandas as pd
 import os
 
+
 def create_layout():
     df_path = os.path.join("data", "datafile_paths_dynamic.csv")
     df = pd.read_csv(df_path)
@@ -50,7 +51,6 @@ def create_layout():
                              placeholder="Select a party")
             ]),
 
-
             html.Div([
                 html.Label("Select Variable #1"),
                 dcc.Dropdown(id="var1-dropdown", placeholder="Select first variable")
@@ -61,6 +61,18 @@ def create_layout():
                 dcc.Dropdown(id="var2-dropdown", placeholder="Select second variable")
             ]),
         ]),
+
+        html.Hr(),
+        html.Div([
+            html.Div([
+                html.Strong("Filters (optional)"),
+                html.Button("+ Add filter", id="add-filter", n_clicks=0, style={"marginLeft": "10px"}),
+            ], style={"display": "flex", "alignItems": "center", "gap": "8px"}),
+            html.Div(id="filters-container", children=[], style={"marginTop": "10px"}),
+            dcc.Store(id="filters-store", data=[]),
+            dcc.Store(id="filters-next-id", data=0),
+        ]),
+
         html.Div(
             id="denominator-choice-container",
             children=[
@@ -99,10 +111,10 @@ def create_layout():
                 style_cell={'textAlign': 'left', 'padding': '5px'},
                 page_size=20,
             )
-        ]),  # <-- comma here
+        ]),
 
         html.Div(  # sample size container (below the table)
             id="sample-size-container",
             style={"marginTop": "10px", "fontStyle": "italic"}
         ),
-      ])
+    ])

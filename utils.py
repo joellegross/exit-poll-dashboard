@@ -105,23 +105,58 @@ def prepare_grouped_data(df, denom, num, weight_col=None, hide_missing=True, hid
 
     return _sort_total_last(count_df), _sort_total_last(percent_df)
 
-def create_percent_charts(percent_df, denom, num):
+# ================== SOLO helpers =====================
+def prepare_solo_data(df, var, weight_col=None, hide_missing=True, hide_excluded=True):
+    """
+    Returns (count_df, percent_df) for a single variable.
+    Columns: [var, Count] and [var, Count, Percentage]
+    """
+    dff = df.copy()
 
-    if denom is None or num is None:
+    # Optional filters
+    if hide_missing:
+        dff = dff[dff[var].notna()]
+    if hide_excluded and "EXCLUDED_FLAG" in dff.columns:
+        dff = dff[~dff["EXCLUDED_FLAG"].astype(bool)]
+
+    # Weights
+    use_weights = bool(weight_col) and (weight_col in dff.columns)
+    if use_weights:
+        dff = dff.copy()
+        dff[weight_col] = pd.to_numeric(dff[weight_col], errors="coerce").fillna(0.0)
+
+        count_df = (
+            dff.groupby(var, dropna=False)[weight_col]
+              .sum()
+              .reset_index()
+              .rename(columns={weight_col: "Count"})
+        )
+    else:
+        count_df = (
+            dff.groupby(var, dropna=False)
+              .size()
+              .reset_index(name="Count")
+        )
+
+    total = float(count_df["Count"].sum())
+    percent_df = count_df.copy()
+    percent_df["Percentage"] = (percent_df["Count"] / total * 100.0).fillna(0.0).round(2) if total else 0.0
+
+    # Keep categories sorted (string-safe)
+    def _safe_key(x): return str(x)
+    count_df    = count_df.sort_values(by=var, key=lambda s: s.map(_safe_key)).reset_index(drop=True)
+    percent_df  = percent_df.sort_values(by=var, key=lambda s: s.map(_safe_key)).reset_index(drop=True)
+    return count_df, percent_df
+
+def create_solo_chart(percent_df, var):
+    """
+    Donut pie for a single variable distribution.
+    """
+    if percent_df.empty:
         return html.Div()
 
-    # Drop any total-row from denom
-    grouped = percent_df[percent_df[denom].astype(str) != "Total"].copy()
-    figures = []
-
-    # Keys: one chart per denom value
-    keys = grouped[denom].dropna().unique()
-    var_col = num  # categories live here
-
-    # Unique categories across whole dataset (for consistent color mapping/order)
-    var_values = grouped[var_col].dropna().unique()
-
-    # === Candidate-specific color logic (unchanged) ===
+    # Handle candidate-specific coloring if applicable
+    var_values = percent_df[var].dropna().unique()
     normalized_party_lookup = {name.lower().strip(): party for name, party in CANDIDATE_PARTY_MAP.items()}
     num_matches = sum(
         1 for v in var_values if isinstance(v, str) and v.lower().strip() in normalized_party_lookup
@@ -141,68 +176,28 @@ def create_percent_charts(percent_df, denom, num):
             for i, cat in enumerate(sorted(var_values, key=lambda x: str(x)))
         }
 
-    # Gray slice settings
-    LEFTOVER_LABEL = "N/A"
-    GRAY = "#BDBDBD"
-    color_map[LEFTOVER_LABEL] = GRAY
+    fig = px.pie(
+        percent_df,
+        names=var,
+        values="Percentage",
+        hole=0.5,
+        color=var,
+        color_discrete_map=color_map,
+    )
 
-    # Chart per denom key
-    for key_val in keys:
-        filtered = grouped.loc[grouped[denom] == key_val].copy()
-        if filtered.empty:
-            continue
+    fig.update_traces(
+        text=[f"{int(v)}%" for v in percent_df["Percentage"]],
+        textinfo="text",
+        hovertemplate="%{label}: %{value:.1f}%<extra></extra>",
+        sort=False,
+    )
 
-        col = var_col
-        filtered = filtered.dropna(subset=[col]).copy()
+    fig.update_layout(
+        margin=dict(t=50, b=50, l=50, r=50),
+        showlegend=True
+    )
 
-        # Stable category order across charts
-        cats_order = sorted([str(v).strip() for v in var_values])
-        filtered[col] = filtered[col].astype(str).str.strip()
-        filtered[col] = pd.Categorical(filtered[col], categories=cats_order, ordered=True)
-        filtered = filtered.sort_values(by=col)
-
-        # Pad to 100% with a gray slice if needed
-        subtotal = float(filtered["Percentage"].sum())
-        leftover = max(0.0, round(100.0 - subtotal, 0))
-        if leftover > 0:
-            extra = {denom: key_val, col: LEFTOVER_LABEL, "Percentage": leftover}
-            filtered = pd.concat([filtered, pd.DataFrame([extra])], ignore_index=True)
-
-        # Donut
-        fig = px.pie(
-            filtered,
-            names=col,
-            values="Percentage",
-            hole=0.5,
-            title=key_val,
-            color=col,
-            color_discrete_map=color_map,
-            hover_data=[],
-        )
-
-        # Only numbers as labels; hide gray slice text
-        text_labels = ["" if r[col] == LEFTOVER_LABEL else f"{int(r['Percentage'])}%"
-                       for _, r in filtered.iterrows()]
-
-        fig.update_traces(
-            text=text_labels,
-            textinfo="text",
-            hovertemplate="%{percent:.0%}<extra></extra>",
-            showlegend=True,
-            sort=False,
-        )
-
-        fig.update_layout(
-            legend=dict(x=1.2, y=0.5, xanchor="left", orientation="v", font=dict(size=12)),
-            margin=dict(t=50, b=50, l=50, r=150),
-        )
-
-        figures.append(
-            dcc.Graph(figure=fig, style={"display": "inline-block", "width": "32%", "height": "400px"})
-        )
-
-    return html.Div(figures, style={"display": "flex", "flexWrap": "wrap", "gap": "20px"})
-
+    return dcc.Graph(figure=fig)
 
 def format_table_data(grouped, denom, num, y_col, mode):
     grouped_wide = (
@@ -225,11 +220,118 @@ def format_table_data(grouped, denom, num, y_col, mode):
         df_out.drop('Omit', axis=1, inplace=True)
 
     other_columns = [col for col in df_out.columns if col != "Total"]
-    new_column_order = other_columns + ["Total"]
-
+    new_column_order = other_columns + ["Total"] if "Total" in df_out.columns else other_columns
     df_out = df_out[new_column_order]
 
     columns = [{"name": str(c), "id": str(c)} for c in df_out.columns]
     data = df_out.to_dict("records")
 
     return grouped_wide, columns, data
+
+def format_solo_table(grouped: pd.DataFrame, var: str, y_col: str, mode: str):
+    """
+    Table for solo variable: [var, Count] or [var, Percentage]
+    """
+    if grouped.empty or var not in grouped.columns or y_col not in grouped.columns:
+        return [], []
+
+    df_out = grouped[[var, y_col]].copy()
+    df_out[var] = df_out[var].astype(str)
+
+    if mode == "percent":
+        df_out[y_col] = (
+            pd.to_numeric(df_out[y_col], errors="coerce")
+              .fillna(0)
+              .round(0)
+              .astype(int)
+              .astype(str) + "%"
+        )
+    else:
+        df_out[y_col] = (
+            pd.to_numeric(df_out[y_col], errors="coerce")
+              .fillna(0)
+              .round(0)
+              .astype("Int64")
+        )
+
+    df_out = df_out.where(pd.notna(df_out), None)
+    columns = [{"name": str(c), "id": str(c)} for c in df_out.columns]
+    data = df_out.to_dict("records")
+    return columns, data
+
+def create_percent_charts(percent_df, denom, num):
+    """
+    Create donut pie charts for each category of denom, showing distribution of num.
+    """
+    if denom is None or num is None or percent_df.empty:
+        return html.Div()
+
+    # Drop any total-row from denom
+    grouped = percent_df[percent_df[denom].astype(str) != "Total"].copy()
+    figures = []
+
+    # Keys: one chart per denom value
+    keys = grouped[denom].dropna().unique()
+    var_col = num  # categories live here
+
+    # Unique categories across whole dataset (for consistent color mapping/order)
+    var_values = grouped[var_col].dropna().unique()
+
+    # Candidate-specific color logic
+    normalized_party_lookup = {name.lower().strip(): party for name, party in CANDIDATE_PARTY_MAP.items()}
+    num_matches = sum(
+        1 for v in var_values if isinstance(v, str) and v.lower().strip() in normalized_party_lookup
+    )
+    is_pres_candidate_question = num_matches >= max(1, len(var_values) / 2)
+
+    if is_pres_candidate_question:
+        color_map = {}
+        for name in var_values:
+            norm_name = name.lower().strip() if isinstance(name, str) else str(name).lower().strip()
+            party = normalized_party_lookup.get(norm_name, "Other")
+            color_map[name] = PARTY_COLORS.get(party, PARTY_COLORS["Other"])
+    else:
+        default_colors = px.colors.qualitative.Set3 + px.colors.qualitative.Set1
+        color_map = {
+            cat: default_colors[i % len(default_colors)]
+            for i, cat in enumerate(sorted(var_values, key=lambda x: str(x)))
+        }
+
+    for key_val in keys:
+        filtered = grouped.loc[grouped[denom] == key_val].copy()
+        if filtered.empty:
+            continue
+
+        subtotal = float(filtered["Percentage"].sum())
+        leftover = max(0.0, round(100.0 - subtotal, 0))
+        if leftover > 0:
+            extra = {denom: key_val, var_col: "N/A", "Percentage": leftover}
+            filtered = pd.concat([filtered, pd.DataFrame([extra])], ignore_index=True)
+
+        fig = px.pie(
+            filtered,
+            names=var_col,
+            values="Percentage",
+            hole=0.5,
+            title=str(key_val),
+            color=var_col,
+            color_discrete_map=color_map,
+        )
+
+        fig.update_traces(
+            text=[f"{int(v)}%" if v > 0 else "" for v in filtered["Percentage"]],
+            textinfo="text",
+            hovertemplate="%{label}: %{value:.1f}%<extra></extra>",
+            sort=False,
+        )
+
+        fig.update_layout(
+            legend=dict(x=1.2, y=0.5, xanchor="left", orientation="v", font=dict(size=12)),
+            margin=dict(t=50, b=50, l=50, r=150),
+        )
+
+        figures.append(
+            dcc.Graph(figure=fig, style={"display": "inline-block", "width": "32%", "height": "400px"})
+        )
+
+    return html.Div(figures, style={"display": "flex", "flexWrap": "wrap", "gap": "20px"})
