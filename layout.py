@@ -62,17 +62,6 @@ def create_layout():
             ]),
         ]),
 
-        html.Hr(),
-        html.Div([
-            html.Div([
-                html.Strong("Filters (optional)"),
-                html.Button("+ Add filter", id="add-filter", n_clicks=0, style={"marginLeft": "10px"}),
-            ], style={"display": "flex", "alignItems": "center", "gap": "8px"}),
-            html.Div(id="filters-container", children=[], style={"marginTop": "10px"}),
-            dcc.Store(id="filters-store", data=[]),
-            dcc.Store(id="filters-next-id", data=0),
-        ]),
-
         html.Div(
             id="denominator-choice-container",
             children=[
