@@ -34,16 +34,6 @@ def get_valid_columns(df, weight_col):
         excluded.add(weight_col)
     return [col for col in df.columns if col not in excluded and not re.search(r"_\d+", col)]
 
-def get_filtered_index(df, year, election, locality, state, party):
-    dff = df[(df["year"] == year) & (df["election_folder"] == election)]
-    if election == "General":
-        dff = dff[dff["locality_type"] == locality]
-        if locality == "State":
-            dff = dff[dff["state"] == state]
-    else:
-        dff = dff[dff["party"] == party] if party else dff[dff["party"].isnull() | (dff["party"] == "")]
-    return dff
-
 def prepare_grouped_data(df, denom, num, weight_col=None, hide_missing=True, hide_excluded=True):
     dff = df.copy()
 
