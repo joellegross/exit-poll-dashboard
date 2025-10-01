@@ -11,7 +11,6 @@ EXCLUDED_COLS = {"ID", "PRECINCT", "STANUM", "BACKSIDE", "TELEPOLL", "CALL", "CD
                  "ZCODE1", "ZCODE2", "ZCODE3", "ZCODE4", "GEOCODE"}
 EXCLUDE_VALUES = {"Did not vote", "None", "Other", None, " ", "Omit"}
 
-# Load general presidential candidate party map
 candidate_map_path = os.path.join("data", "general_presidential_candidates_party_map.json")
 with open(candidate_map_path, "r") as f:
     CANDIDATE_PARTY_MAP = json.load(f)
@@ -28,11 +27,13 @@ def get_weight_column(df):
             return col
     return None
 
+
 def get_valid_columns(df, weight_col):
     excluded = EXCLUDED_COLS.copy()
     if weight_col:
         excluded.add(weight_col)
     return [col for col in df.columns if col not in excluded and not re.search(r"_\d+", col)]
+
 
 def get_filtered_index(df, year, election, locality, state, party):
     dff = df[(df["year"] == year) & (df["election_folder"] == election)]
@@ -43,22 +44,20 @@ def get_filtered_index(df, year, election, locality, state, party):
     else:
         dff = dff[dff["party"] == party] if party else dff[dff["party"].isnull() | (dff["party"] == "")]
     return dff
+
 def prepare_grouped_data(df, denom, num, weight_col=None, hide_missing=True, hide_excluded=True):
     dff = df.copy()
 
-    # Optional filters
     if hide_missing:
         dff = dff[dff[denom].notna() & dff[num].notna()]
     if hide_excluded and 'EXCLUDED_FLAG' in dff.columns:
         dff = dff[~dff['EXCLUDED_FLAG'].astype(bool)]
 
-    # Weights
     use_weights = weight_col and weight_col in dff.columns
     if use_weights:
         dff = dff.copy()
         dff[weight_col] = pd.to_numeric(dff[weight_col], errors="coerce").fillna(0.0)
 
-    # --- Counts
     if use_weights:
         grouped_w = (
             dff.groupby([denom, num], dropna=False)[weight_col]
@@ -74,12 +73,10 @@ def prepare_grouped_data(df, denom, num, weight_col=None, hide_missing=True, hid
                .reset_index(name="Count")
         )
 
-    # --- Percentages (normalize within denom)
     totals = count_df.groupby(denom, dropna=False)["Count"].transform("sum")
     percent_df = count_df.copy()
     percent_df["Percentage"] = (percent_df["Count"] / totals * 100).fillna(0)
 
-    # --- Overall “Total” rows ---
     overall_c = (
         count_df.groupby(num, dropna=False)["Count"].sum().reset_index()
     )
@@ -90,11 +87,10 @@ def prepare_grouped_data(df, denom, num, weight_col=None, hide_missing=True, hid
         overall_p["Count"] / overall_p["Count"].sum() * 100
     ).fillna(0)
 
-    # Append “Total”
+
     count_df  = pd.concat([count_df, overall_c], ignore_index=True)
     percent_df = pd.concat([percent_df, overall_p], ignore_index=True)
 
-    # Keep “Total” last
     def _sort_total_last(frame):
         is_total = (frame[denom].astype(str) == "Total").astype(int)
         return (frame.assign(__is_total=is_total)
@@ -104,21 +100,15 @@ def prepare_grouped_data(df, denom, num, weight_col=None, hide_missing=True, hid
 
     return _sort_total_last(count_df), _sort_total_last(percent_df)
 
-# ================== SOLO helpers =====================
 def prepare_solo_data(df, var, weight_col=None, hide_missing=True, hide_excluded=True):
-    """
-    Returns (count_df, percent_df) for a single variable.
-    Columns: [var, Count] and [var, Count, Percentage]
-    """
+
     dff = df.copy()
 
-    # Optional filters
     if hide_missing:
         dff = dff[dff[var].notna()]
     if hide_excluded and "EXCLUDED_FLAG" in dff.columns:
         dff = dff[~dff["EXCLUDED_FLAG"].astype(bool)]
 
-    # Weights
     use_weights = bool(weight_col) and (weight_col in dff.columns)
     if use_weights:
         dff = dff.copy()
@@ -141,20 +131,16 @@ def prepare_solo_data(df, var, weight_col=None, hide_missing=True, hide_excluded
     percent_df = count_df.copy()
     percent_df["Percentage"] = (percent_df["Count"] / total * 100.0).fillna(0.0).round(2) if total else 0.0
 
-    # Keep categories sorted (string-safe)
     def _safe_key(x): return str(x)
     count_df    = count_df.sort_values(by=var, key=lambda s: s.map(_safe_key)).reset_index(drop=True)
     percent_df  = percent_df.sort_values(by=var, key=lambda s: s.map(_safe_key)).reset_index(drop=True)
     return count_df, percent_df
 
 def create_solo_chart(percent_df, var):
-    """
-    Donut pie for a single variable distribution.
-    """
+
     if percent_df.empty:
         return html.Div()
 
-    # Handle candidate-specific coloring if applicable
     var_values = percent_df[var].dropna().unique()
     normalized_party_lookup = {name.lower().strip(): party for name, party in CANDIDATE_PARTY_MAP.items()}
     num_matches = sum(
@@ -228,9 +214,7 @@ def format_table_data(grouped, denom, num, y_col, mode):
     return grouped_wide, columns, data
 
 def format_solo_table(grouped: pd.DataFrame, var: str, y_col: str, mode: str):
-    """
-    Table for solo variable: [var, Count] or [var, Percentage]
-    """
+
     if grouped.empty or var not in grouped.columns or y_col not in grouped.columns:
         return [], []
 
@@ -259,24 +243,18 @@ def format_solo_table(grouped: pd.DataFrame, var: str, y_col: str, mode: str):
     return columns, data
 
 def create_percent_charts(percent_df, denom, num):
-    """
-    Create donut pie charts for each category of denom, showing distribution of num.
-    """
+
     if denom is None or num is None or percent_df.empty:
         return html.Div()
 
-    # Drop any total-row from denom
     grouped = percent_df[percent_df[denom].astype(str) != "Total"].copy()
     figures = []
 
-    # Keys: one chart per denom value
     keys = grouped[denom].dropna().unique()
-    var_col = num  # categories live here
+    var_col = num
 
-    # Unique categories across whole dataset (for consistent color mapping/order)
     var_values = grouped[var_col].dropna().unique()
 
-    # Candidate-specific color logic
     normalized_party_lookup = {name.lower().strip(): party for name, party in CANDIDATE_PARTY_MAP.items()}
     num_matches = sum(
         1 for v in var_values if isinstance(v, str) and v.lower().strip() in normalized_party_lookup

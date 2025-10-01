@@ -2,7 +2,6 @@
 from dash import Input, Output, State, dcc, html, dash_table
 import pandas as pd
 import os
-from dash.exceptions import PreventUpdate
 
 import json
 
@@ -84,7 +83,6 @@ def register_callbacks(app, df_path):
 
         return opts, var1_val, opts, var2_val
 
-    # --- B) Radio visibility + labels from the two selected vars (NO DROPDOWN OUTPUTS) ---
     @app.callback(
         Output("denominator-choice-container", "style"),
         Output("denom-choice", "options"),
@@ -124,18 +122,17 @@ def register_callbacks(app, df_path):
         Input("state-dropdown", "value"),
         Input("locality-dropdown", "value"),
         Input("party-dropdown", "value"),
-        Input("agg-mode", "value"),            # "count" | "percent"
-        Input("denom-choice", "value"),    # <-- radio as INPUT so toggling re-renders
+        Input("agg-mode", "value"),
+        Input("denom-choice", "value"),
         Input("var1-dropdown", "value"),
         Input("var2-dropdown", "value"),
     )
     def render_outputs(year, election, state, locality, party, mode, denom_choice, var1, var2):
-        # Figure out selection mode
+
         two_vars = bool(var1) and bool(var2) and (var1 != var2)
         one_var = (bool(var1) ^ bool(var2))
         solo_var = var1 if (var1 and not var2) else (var2 if (var2 and not var1) else None)
 
-        # Find the file once
         dff = get_filtered_index(df, year, election, locality, state, party)
         if dff.empty:
             return html.P("No matching file."), [], [], ""
@@ -145,7 +142,6 @@ def register_callbacks(app, df_path):
         df_file.columns = [c.upper().strip() for c in df_file.columns]
         weight_col = get_weight_column(df_file)
 
-        # --- SOLO VARIABLE MODE ---
         if one_var and solo_var:
             count_df, percent_df = prepare_solo_data(
                 df=df_file,
@@ -160,13 +156,11 @@ def register_callbacks(app, df_path):
             if grouped.empty:
                 return html.P(f"No respondents answered {solo_var}.", style={"color": "red"}), [], [], ""
 
-            # Chart (donut pie)
+
             chart_output = create_solo_chart(percent_df, solo_var)
 
-            # Table
             columns, data = format_solo_table(grouped, solo_var, y_col, mode)
 
-            # Heading & sample size
             solo_q = VARIABLE_METADATA.get(solo_var, {}).get("question", "")
             sample_size = int(df_file[solo_var].notna().sum())
             sample_size_text = f"Sample size (non-missing): {sample_size:,}" if sample_size else ""
@@ -206,13 +200,10 @@ def register_callbacks(app, df_path):
             if grouped.empty:
                 return html.P("No respondents answered both selected questions.", style={"color": "red"}), [], [], ""
 
-            # Charts
             chart_output = create_percent_charts(percent_df, denom, num)
 
-            # Table
             _, columns, data = format_table_data(grouped, denom, num, y_col, mode)
 
-            # Headings & sample size
             denom_q = VARIABLE_METADATA.get(denom, {}).get("question", "")
             num_q = VARIABLE_METADATA.get(num, {}).get("question", "")
 
@@ -233,5 +224,5 @@ def register_callbacks(app, df_path):
 
             return html.Div([question_heading, chart_output]), columns, data, sample_size_text
 
-        # --- Neither or invalid selection ---
+
         return [], [], [], []
