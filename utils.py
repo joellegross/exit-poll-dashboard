@@ -9,8 +9,10 @@ import os
 
 EXCLUDED_COLS = {"ID", "PRECINCT", "STANUM", "BACKSIDE", "TELEPOLL", "CALL", "CDNUM", "VERSION",
                  "ZCODE1", "ZCODE2", "ZCODE3", "ZCODE4", "GEOCODE"}
-EXCLUDE_VALUES = {"Did not vote", "None", "Other", None, " ", "Omit"}
-
+EXCLUDE_VALUES = {
+    "Did not vote", "None", "Other", "Omit",
+    None, "", " ", "  ", "N/A", "NA"
+}
 # Load general presidential candidate party map
 candidate_map_path = os.path.join("data", "general_presidential_candidates_party_map.json")
 with open(candidate_map_path, "r") as f:
@@ -44,17 +46,31 @@ def get_filtered_index(df, year, election, locality, state, party):
         dff = dff[dff["party"] == party] if party else dff[dff["party"].isnull() | (dff["party"] == "")]
     return dff
 
-def apply_multiple_filters(df,filters):
-
+def apply_multiple_filters(df, filters):
+    """
+    Apply multiple equality filters to a DataFrame.
+    filters: list of dicts, each like {"var": "SEX", "value": "Female"}.
+    Returns a filtered DataFrame.
+    """
     dff = df.copy()
+
     if not filters:
         return dff
+
     for f in filters:
         var = f.get("var")
         val = f.get("value")
+
         if not var or val is None:
             continue
-        dff = dff[dff[var].astype(str).str.strip() == str(val).strip()]
+
+        if var not in dff.columns:
+            continue
+
+        left = dff[var].astype(str).str.strip()
+        right = str(val).strip()
+        dff = dff[left == right]
+
     return dff
 
 def prepare_grouped_data(df, denom, num, weight_col=None, hide_missing=True, hide_excluded=True):
@@ -164,13 +180,25 @@ def prepare_solo_data(df, var, weight_col=None, hide_missing=True, hide_excluded
 def create_solo_chart(percent_df, var):
     """
     Donut pie for a single variable distribution.
+    Excluded values (EXCLUDE_VALUES) are shown as gray and relabeled 'N/A'.
     """
     if percent_df.empty:
         return html.Div()
 
-    # Handle candidate-specific coloring if applicable
+    # --- Normalize excluded values ---
+    exclude_set = set(EXCLUDE_VALUES) | {""}
+    percent_df = percent_df.copy()
+    percent_df[var] = percent_df[var].apply(
+        lambda v: "N/A" if str(v).strip() in exclude_set else v
+    )
+
+    # Unique categories after collapsing excluded
     var_values = percent_df[var].dropna().unique()
-    normalized_party_lookup = {name.lower().strip(): party for name, party in CANDIDATE_PARTY_MAP.items()}
+
+    # Candidate-specific coloring check
+    normalized_party_lookup = {
+        name.lower().strip(): party for name, party in CANDIDATE_PARTY_MAP.items()
+    }
     num_matches = sum(
         1 for v in var_values if isinstance(v, str) and v.lower().strip() in normalized_party_lookup
     )
@@ -189,6 +217,9 @@ def create_solo_chart(percent_df, var):
             for i, cat in enumerate(sorted(var_values, key=lambda x: str(x)))
         }
 
+    # Force N/A to gray
+    color_map["N/A"] = "#D3D3D3"
+
     fig = px.pie(
         percent_df,
         names=var,
@@ -199,7 +230,7 @@ def create_solo_chart(percent_df, var):
     )
 
     fig.update_traces(
-        text=[f"{int(v)}%" for v in percent_df["Percentage"]],
+        text=[f"{int(v)}%" if v > 0 else "" for v in percent_df["Percentage"]],
         textinfo="text",
         hovertemplate="%{label}: %{value:.1f}%<extra></extra>",
         sort=False,
@@ -237,6 +268,9 @@ def format_table_data(grouped, denom, num, y_col, mode):
     df_out = df_out[new_column_order]
 
     columns = [{"name": str(c), "id": str(c)} for c in df_out.columns]
+    exclude_set = set(EXCLUDE_VALUES) | {""}
+    df_out[num] = df_out[num].astype(str).str.strip()
+    df_out = df_out[~df_out[num].isin(exclude_set)]
     data = df_out.to_dict("records")
 
     return grouped_wide, columns, data
@@ -269,57 +303,44 @@ def format_solo_table(grouped: pd.DataFrame, var: str, y_col: str, mode: str):
 
     df_out = df_out.where(pd.notna(df_out), None)
     columns = [{"name": str(c), "id": str(c)} for c in df_out.columns]
+    df_out = df_out[~df_out[var].isin(EXCLUDE_VALUES)]
+
     data = df_out.to_dict("records")
     return columns, data
 
 def create_percent_charts(percent_df, denom, num):
     """
     Create donut pie charts for each category of denom, showing distribution of num.
+    Excluded values (EXCLUDE_VALUES) are shown as gray and relabeled 'N/A'.
     """
     if denom is None or num is None or percent_df.empty:
         return html.Div()
 
-    # Drop any total-row from denom
     grouped = percent_df[percent_df[denom].astype(str) != "Total"].copy()
     figures = []
 
-    # Keys: one chart per denom value
     keys = grouped[denom].dropna().unique()
-    var_col = num  # categories live here
-
-    # Unique categories across whole dataset (for consistent color mapping/order)
+    var_col = num
     var_values = grouped[var_col].dropna().unique()
 
-    # Candidate-specific color logic
-    normalized_party_lookup = {name.lower().strip(): party for name, party in CANDIDATE_PARTY_MAP.items()}
-    num_matches = sum(
-        1 for v in var_values if isinstance(v, str) and v.lower().strip() in normalized_party_lookup
-    )
-    is_pres_candidate_question = num_matches >= max(1, len(var_values) / 2)
+    # build default color map
+    default_colors = px.colors.qualitative.Set3 + px.colors.qualitative.Set1
+    color_map = {
+        cat: default_colors[i % len(default_colors)]
+        for i, cat in enumerate(sorted(var_values, key=lambda x: str(x)))
+    }
 
-    if is_pres_candidate_question:
-        color_map = {}
-        for name in var_values:
-            norm_name = name.lower().strip() if isinstance(name, str) else str(name).lower().strip()
-            party = normalized_party_lookup.get(norm_name, "Other")
-            color_map[name] = PARTY_COLORS.get(party, PARTY_COLORS["Other"])
-    else:
-        default_colors = px.colors.qualitative.Set3 + px.colors.qualitative.Set1
-        color_map = {
-            cat: default_colors[i % len(default_colors)]
-            for i, cat in enumerate(sorted(var_values, key=lambda x: str(x)))
-        }
+    # override excluded values → gray and relabel to N/A
+    exclude_set = set(EXCLUDE_VALUES) | {""}
+    grouped[var_col] = grouped[var_col].apply(
+        lambda v: "N/A" if str(v).strip() in exclude_set else v
+    )
+    color_map["N/A"] = "#D3D3D3"  # gray
 
     for key_val in keys:
         filtered = grouped.loc[grouped[denom] == key_val].copy()
         if filtered.empty:
             continue
-
-        subtotal = float(filtered["Percentage"].sum())
-        leftover = max(0.0, round(100.0 - subtotal, 0))
-        if leftover > 0:
-            extra = {denom: key_val, var_col: "N/A", "Percentage": leftover}
-            filtered = pd.concat([filtered, pd.DataFrame([extra])], ignore_index=True)
 
         fig = px.pie(
             filtered,

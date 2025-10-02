@@ -2,7 +2,6 @@
 from dash import Input, Output, State, dcc, html, dash_table
 import pandas as pd
 import os
-from dash.exceptions import PreventUpdate
 
 import json
 
@@ -87,7 +86,6 @@ def register_callbacks(app, df_path):
 
     @app.callback(
         Output("filter-var-dropdown", "options"),
-        Output("filter-var-dropdown", "value"),
         Input("year-dropdown", "value"),
         Input("election-dropdown", "value"),
         Input("state-dropdown", "value"),
@@ -96,9 +94,10 @@ def register_callbacks(app, df_path):
         State("filter-var-dropdown", "value"),
     )
     def setup_filter_var(year, election, state, locality, party, current):
+
         dff = get_filtered_index(df, year, election, locality, state, party)
         if dff.empty:
-            return [], None
+            return []
 
         filepath = os.path.join(DATA_ROOT, dff.iloc[0]["path"])
         df_file = pd.read_csv(filepath, low_memory=False)
@@ -107,20 +106,13 @@ def register_callbacks(app, df_path):
         weight_col = get_weight_column(df_file)
         valid_cols = get_valid_columns(df_file, weight_col)
 
-        # If you prefer a “no filter” choice, keep it in the list.
-        # Use None as value (Dash supports it).
-        options = (
-                [{"label": "— No filter —", "value": None}] +
-                [{"label": c, "value": c} for c in sorted(valid_cols)]
-        )
+        options = sorted([str(v) for v in valid_cols])
 
-        value = current if current in valid_cols else None
-        return options, value
+        return options
 
     @app.callback(
         Output("filter-value-dropdown", "options"),
-        Output("filter-value-dropdown", "value"),
-        Input("filter-var-dropdown", "value"),  # drives value options
+        Input("filter-var-dropdown", "value"),
         Input("year-dropdown", "value"),
         Input("election-dropdown", "value"),
         Input("state-dropdown", "value"),
@@ -130,24 +122,38 @@ def register_callbacks(app, df_path):
         prevent_initial_call=True
     )
     def setup_filter_value(filter_var, year, election, state, locality, party, current_value):
+
         if not filter_var:
-            return [], None
+            return []
 
         dff = get_filtered_index(df, year, election, locality, state, party)
         if dff.empty:
-            return [], None
+            return []
 
         filepath = os.path.join(DATA_ROOT, dff.iloc[0]["path"])
         df_file = pd.read_csv(filepath, low_memory=False)
         df_file.columns = [c.upper().strip() for c in df_file.columns]
 
-        values = df_file[filter_var].dropna().unique().tolist()
-        # Optional cleanup to hide special categories you don’t want users to select
+        values = df_file[filter_var].dropna().unique()
         values = [v for v in values if v not in EXCLUDE_VALUES]
 
-        options = [{"label": str(v), "value": v} for v in sorted(values, key=lambda x: str(x))]
-        value = current_value if current_value in values else None
-        return options, value
+        return values
+
+    @app.callback(
+        Output("filters-store", "data"),
+        Input("filter-var-dropdown", "value"),
+        Input("filter-value-dropdown", "value"),
+        State("filters-store", "data"),
+    )
+    def save_filter(var, val, store):
+        store = store or {}
+        if var is None:
+            return {}
+        if val is None:
+            store.pop(var, None)
+            return store
+        store[var] = val
+        return store
 
     @app.callback(
         Output("denominator-choice-container", "style"),
@@ -192,11 +198,16 @@ def register_callbacks(app, df_path):
         Input("denom-choice", "value"),
         Input("var1-dropdown", "value"),
         Input("var2-dropdown", "value"),
-        State("filters-store", "data"),
+        Input("filters-store", "data"),
     )
 
     def render_outputs(year, election, state, locality, party, mode, denom_choice,
                        var1, var2, filters):
+        filters_list = [
+            {"var": k, "value": v}
+            for k, v in (filters or {}).items()
+            if k and v is not None
+        ]
 
         # --- Which mode are we in? ---
         two_vars = bool(var1) and bool(var2) and (var1 != var2)
@@ -213,7 +224,8 @@ def register_callbacks(app, df_path):
         df_file.columns = [c.upper().strip() for c in df_file.columns]
 
         # --- Apply multiple filters ---
-        df_file = apply_multiple_filters(df_file, filters)
+        df_file = apply_multiple_filters(df_file, filters_list)
+
         weight_col = get_weight_column(df_file)
 
         # === SOLO VARIABLE ===

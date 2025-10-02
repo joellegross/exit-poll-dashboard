@@ -66,17 +66,19 @@ def create_layout():
             html.Label("Condition on (optional)"),
             dcc.Dropdown(
                 id="filter-var-dropdown",
-                options=[],
+                options=[],  # list, not {}
                 value=None,
                 placeholder="Choose a variable",
+                clearable=True,
             ),
             dcc.Dropdown(
                 id="filter-value-dropdown",
-                options=[],
+                options=[],  # list, not {}
                 value=None,
                 placeholder="Choose a value",
+                clearable=True,
             ),
-            dcc.Store(id="filters-store", data={}),
+            dcc.Store(id="filters-store", data={}),  # e.g. {"SEX":"Female"}
         ], style={"maxWidth": "520px"}),
 
         html.Div(
@@ -119,7 +121,7 @@ def create_layout():
             )
         ]),
 
-        html.Div(  # sample size container (below the table)
+        html.Div(
             id="sample-size-container",
             style={"marginTop": "10px", "fontStyle": "italic"}
         ),
