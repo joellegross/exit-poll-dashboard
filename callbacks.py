@@ -53,6 +53,7 @@ def register_callbacks(app, df_path):
         options = [{"label": s, "value": s} for s in sorted(valid_states.unique())]
         return options, (options[0]["value"] if options else None)
 
+
     @app.callback(
         Output("var1-dropdown", "options"),
         Output("var1-dropdown", "value"),
@@ -83,6 +84,15 @@ def register_callbacks(app, df_path):
         var2_val  = var2_curr if (var2_curr in valid_cols and var2_curr != var1_val) else None
 
         return opts, var1_val, opts, var2_val
+
+    @app.callback(
+        Output("condition-container", "style"),
+        Input("var1-dropdown", "value"),
+    )
+    def toggle_condition(var1):
+        if var1:
+            return {"display": "block", "marginTop": "10px"}
+        return {"display": "none"}
 
     @app.callback(
         Output("filter-var-dropdown", "options"),
