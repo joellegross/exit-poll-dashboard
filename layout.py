@@ -61,6 +61,34 @@ def create_layout():
                 dcc.Dropdown(id="var2-dropdown", placeholder="Select second variable")
             ]),
         ]),
+        html.Hr(),
+
+        html.Div(
+            id="denominator-choice-container",
+            children=[
+                html.Label("Select denominator:"),
+                dcc.RadioItems(id="denom-choice", inline=True)
+            ],
+            style={"display": "none"}
+        ),
+        html.Div(
+            id="condition-container",
+            children=[
+                html.Label("Condition on (optional)"),
+                dcc.Dropdown(
+                    id="filter-var-dropdown",
+                    options=[],
+                    placeholder="Choose a variable",
+                ),
+                dcc.Dropdown(
+                    id="filter-value-dropdown",
+                    options=[],
+                    placeholder="Choose a value",
+                ),
+                dcc.Store(id="filters-store", data={}, storage_type="session"),
+            ],
+            style={"display": "none"}  # hidden by default
+        ),
         html.Div(id="charts"),
 
         html.Br(),
