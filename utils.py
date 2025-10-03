@@ -73,97 +73,152 @@ def apply_multiple_filters(df, filters):
 
     return dff
 
-def prepare_grouped_data(df, denom, num, weight_col=None, hide_missing=True, hide_excluded=True):
+import pandas as pd
+
+def prepare_grouped_data(
+    df, denom, num, weight_col=None, hide_missing=True, hide_excluded=True, total_label="Total"
+):
     dff = df.copy()
 
     # Optional filters
     if hide_missing:
         dff = dff[dff[denom].notna() & dff[num].notna()]
-    if hide_excluded and 'EXCLUDED_FLAG' in dff.columns:
-        dff = dff[~dff['EXCLUDED_FLAG'].astype(bool)]
+    if hide_excluded and "EXCLUDED_FLAG" in dff.columns:
+        dff = dff[~dff["EXCLUDED_FLAG"].astype(bool)]
 
-    # Weights
-    use_weights = weight_col and weight_col in dff.columns
-    if use_weights:
+    # Unified weight column (1.0 if none provided)
+    if weight_col and weight_col in dff.columns:
         dff = dff.copy()
-        dff[weight_col] = pd.to_numeric(dff[weight_col], errors="coerce").fillna(0.0)
-
-    # --- Counts
-    if use_weights:
-        grouped_w = (
-            dff.groupby([denom, num], dropna=False)[weight_col]
-               .sum()
-               .reset_index()
-               .rename(columns={weight_col: "WeightSum"})
-        )
-        count_df = grouped_w.rename(columns={"WeightSum": "Count"})
+        dff["_w"] = pd.to_numeric(dff[weight_col], errors="coerce").fillna(0.0)
     else:
-        count_df = (
-            dff.groupby([denom, num], dropna=False)
-               .size()
-               .reset_index(name="Count")
+        dff["_w"] = 1.0
+
+    # Unweighted counts for display
+    count_df = (
+        dff.groupby([denom, num], dropna=False)
+           .size()
+           .reset_index(name="Count")
+    )
+
+    # Weighted sums for percentages
+    weight_df = (
+        dff.groupby([denom, num], dropna=False)["_w"]
+           .sum()
+           .reset_index()
+           .rename(columns={"_w": "Weight"})
+    )
+
+    # Merge so percent_df has unweighted Count but % from weighted totals
+    percent_df = (
+        count_df.merge(weight_df, on=[denom, num], how="outer")
+                .fillna({"Count": 0, "Weight": 0.0})
+    )
+
+    # Percent within each denom (weighted)
+    totals_w_by_denom = percent_df.groupby(denom, dropna=False)["Weight"].transform("sum")
+    percent_df["Percentage"] = (percent_df["Weight"] / totals_w_by_denom * 100).fillna(0.0)
+
+    # Overall rows
+    overall_c = (
+        count_df.groupby(num, dropna=False)["Count"]
+                .sum()
+                .reset_index()
+                .assign(**{denom: total_label})
+    )
+    overall_w = (
+        weight_df.groupby(num, dropna=False)["Weight"]
+                 .sum()
+                 .reset_index()
+                 .assign(**{denom: total_label})
+    )
+    overall_p = (
+        overall_c.merge(overall_w, on=[denom, num], how="outer")
+                 .fillna({"Count": 0, "Weight": 0.0})
+    )
+    overall_p["Percentage"] = (
+        overall_p["Weight"] / overall_p["Weight"].sum() * 100
+    ).fillna(0.0)
+
+    count_out   = pd.concat([count_df, overall_c], ignore_index=True)
+    percent_out = pd.concat([percent_df, overall_p], ignore_index=True)
+
+    percent_out = percent_out.drop(columns=["Weight"])
+
+    def _sort_total_last(frame):
+        is_total = (frame[denom].astype(str) == str(total_label)).astype(int)
+        return (
+            frame.assign(__is_total=is_total)
+                 .sort_values(["__is_total", denom, num], kind="mergesort")
+                 .drop(columns="__is_total")
+                 .reset_index(drop=True)
         )
 
-    totals = count_df.groupby(denom, dropna=False)["Count"].transform("sum")
-    percent_df = count_df.copy()
-    percent_df["Percentage"] = (percent_df["Count"] / totals * 100).fillna(0)
-
-    overall_c = (
-        count_df.groupby(num, dropna=False)["Count"].sum().reset_index()
-    )
-    overall_c[denom] = "Total"
-
-    overall_p = overall_c.copy()
-    overall_p["Percentage"] = (
-        overall_p["Count"] / overall_p["Count"].sum() * 100
-    ).fillna(0)
-
-    # Append “Total”
-    count_df  = pd.concat([count_df, overall_c], ignore_index=True)
-    percent_df = pd.concat([percent_df, overall_p], ignore_index=True)
-
-    # Keep “Total” last
-    def _sort_total_last(frame):
-        is_total = (frame[denom].astype(str) == "Total").astype(int)
-        return (frame.assign(__is_total=is_total)
-                     .sort_values(["__is_total", denom, num])
-                     .drop(columns="__is_total")
-                     .reset_index(drop=True))
-
-    return _sort_total_last(count_df), _sort_total_last(percent_df)
+    return _sort_total_last(count_out), _sort_total_last(percent_out)
 
 # ================== SOLO helpers =====================
-def prepare_solo_data(df, var, weight_col=None, hide_missing=True, hide_excluded=True, include_percent=True):
+def prepare_solo_data(
+    df,
+    var,
+    weight_col=None,
+    hide_missing=True,
+    hide_excluded=True,
+    include_percent=True
+):
     dff = df.copy()
 
+    # Optional filters
     if hide_missing:
         dff = dff[dff[var].notna()]
     if hide_excluded and "EXCLUDED_FLAG" in dff.columns:
         dff = dff[~dff["EXCLUDED_FLAG"].astype(bool)]
 
-    use_weights = bool(weight_col) and (weight_col in dff.columns)
-    if use_weights:
+    # Unified weight column (1.0 if none provided)
+    if weight_col and (weight_col in dff.columns):
         dff = dff.copy()
-        dff[weight_col] = pd.to_numeric(dff[weight_col], errors="coerce").fillna(0.0)
-        count_df = (dff.groupby(var, dropna=False)[weight_col]
-                      .sum().reset_index().rename(columns={weight_col: "Count"}))
+        dff["_w"] = pd.to_numeric(dff[weight_col], errors="coerce").fillna(0.0)
     else:
-        count_df = (dff.groupby(var, dropna=False)
-                      .size().reset_index(name="Count"))
+        dff["_w"] = 1.0
 
-    # string-safe sort
-    count_df = count_df.sort_values(by=var, key=lambda s: s.astype(str)).reset_index(drop=True)
+    # Unweighted counts
+    count_df = (
+        dff.groupby(var, dropna=False)
+           .size()
+           .reset_index(name="Count")
+           .sort_values(by=var, key=lambda s: s.astype(str))
+           .reset_index(drop=True)
+    )
 
     if not include_percent:
         return count_df, None
 
-    total = float(count_df["Count"].sum())
-    percent_df = count_df.copy()
-    percent_df["Percentage"] = (percent_df["Count"] / total * 100.0).fillna(0.0).round(2) if total else 0.0
-    percent_df = percent_df.sort_values(by=var, key=lambda s: s.astype(str)).reset_index(drop=True)
+    # Weighted totals for percentages
+    weight_df = (
+        dff.groupby(var, dropna=False)["_w"]
+           .sum()
+           .reset_index()
+           .rename(columns={"_w": "Weight"})
+    )
+
+    percent_df = (
+        count_df.merge(weight_df, on=var, how="outer")
+                .fillna({"Count": 0, "Weight": 0.0})
+    )
+
+    total_w = float(percent_df["Weight"].sum())
+    if total_w > 0:
+        percent_df["Percentage"] = (percent_df["Weight"] / total_w * 100.0).round(2)
+    else:
+        percent_df["Percentage"] = 0.0
+
+    percent_df = (
+        percent_df.drop(columns=["Weight"])
+                  .sort_values(by=var, key=lambda s: s.astype(str))
+                  .reset_index(drop=True)
+    )
+
     return count_df, percent_df
 
-def create_solo_chart(percent_df, var, remainder_label="Unaccounted", eps=1e-6):
+def create_solo_chart(percent_df, var, remainder_label="N/A", eps=1e-6):
     """
     Donut pie for a single variable distribution.
     - Keeps labels/tooltip equal to your df's 'Percentage' values.
@@ -240,14 +295,40 @@ def create_solo_chart(percent_df, var, remainder_label="Unaccounted", eps=1e-6):
     )
 
     return dcc.Graph(figure=fig)
-def format_table_data(grouped, denom, num, y_col, mode):
-    grouped_wide = (
-        grouped
-        .pivot_table(index=num, columns=denom, values=y_col, aggfunc="sum")
+def format_table_data(
+    grouped,
+    denom,
+    num,
+    y_col,
+    mode,
+    exclude_values=None,    # e.g., ["Omit", "Prefer not to say", "(Blank)"]
+    keep_total=True,
+    total_label="Total",
+):
+    exclude_values = exclude_values or []
+    def _norm(x):
+        return str(x).strip()
+    exclude_set = {_norm(v) for v in exclude_values} | {""}
+
+    grouped_wide = grouped.pivot_table(
+        index=num, columns=denom, values=y_col, aggfunc="sum"
     )
 
-    grouped_wide = grouped_wide.apply(pd.to_numeric, errors="coerce") \
-                               .replace([np.inf, -np.inf], np.nan)
+    # Clean numeric issues
+    grouped_wide = (grouped_wide
+                    .apply(pd.to_numeric, errors="coerce")
+                    .replace([np.inf, -np.inf], np.nan))
+
+    idx_labels = pd.Index([_norm(v) for v in grouped_wide.index], name=grouped_wide.index.name)
+    row_keep_mask = ~idx_labels.isin(exclude_set)
+    grouped_wide = grouped_wide.loc[row_keep_mask]
+
+    col_labels = pd.Index([_norm(c) for c in grouped_wide.columns], name=grouped_wide.columns.name)
+    if keep_total and total_label in col_labels:
+        col_keep_mask = (~col_labels.isin(exclude_set)) | (col_labels == total_label)
+    else:
+        col_keep_mask = ~col_labels.isin(exclude_set)
+    grouped_wide = grouped_wide.loc[:, col_keep_mask]
 
     if mode == "percent":
         grouped_wide = grouped_wide.fillna(0).round(0).astype("Int64")
@@ -257,17 +338,12 @@ def format_table_data(grouped, denom, num, y_col, mode):
 
     df_out = grouped_wide.reset_index()
     df_out = df_out.where(pd.notna(df_out), None)
-    if "Omit" in df_out:
-        df_out.drop('Omit', axis=1, inplace=True)
 
-    other_columns = [col for col in df_out.columns if col != "Total"]
-    new_column_order = other_columns + ["Total"] if "Total" in df_out.columns else other_columns
-    df_out = df_out[new_column_order]
+    if keep_total and total_label in df_out.columns:
+        other_cols = [c for c in df_out.columns if c not in (total_label,)]
+        df_out = df_out[other_cols + [total_label]]
 
     columns = [{"name": str(c), "id": str(c)} for c in df_out.columns]
-    exclude_set = set(EXCLUDE_VALUES) | {""}
-    df_out[num] = df_out[num].astype(str).str.strip()
-    df_out = df_out[~df_out[num].isin(exclude_set)]
     data = df_out.to_dict("records")
 
     return grouped_wide, columns, data
@@ -312,7 +388,6 @@ _EXCLUDE_NORM = {_norm(v) for v in EXCLUDE_VALUES}
 
 def _is_excluded(v):
     return _norm(v) in _EXCLUDE_NORM
-
 
 def create_percent_charts(percent_df, denom, num, remainder_label="Unaccounted", eps=1e-6):
     if denom is None or num is None or percent_df.empty:
