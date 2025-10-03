@@ -47,11 +47,7 @@ def get_filtered_index(df, year, election, locality, state, party):
     return dff
 
 def apply_multiple_filters(df, filters):
-    """
-    Apply multiple equality filters to a DataFrame.
-    filters: list of dicts, each like {"var": "SEX", "value": "Female"}.
-    Returns a filtered DataFrame.
-    """
+
     dff = df.copy()
 
     if not filters:
@@ -72,8 +68,6 @@ def apply_multiple_filters(df, filters):
         dff = dff[left == right]
 
     return dff
-
-import pandas as pd
 
 def prepare_grouped_data(df, denom, num, weight_col=None, hide_missing=True, hide_excluded=True):
     dff = df.copy()

@@ -39,7 +39,6 @@ def register_callbacks(app, df_path):
             {"display": "block"} if locality != "National" else {"display": "none"},
         )
 
-    # --- A) Populate state options per year/election (unchanged) ---
     @app.callback(
         Output("state-dropdown", "options"),
         Output("state-dropdown", "value"),
@@ -81,7 +80,7 @@ def register_callbacks(app, df_path):
         opts = sorted([{"label": c, "value": c} for c in valid_cols], key=lambda x: x["label"])
 
         var1_val = var1_curr if var1_curr in valid_cols else None
-        var2_val  = var2_curr if (var2_curr in valid_cols and var2_curr != var1_val) else None
+        var2_val = var2_curr if (var2_curr in valid_cols and var2_curr != var1_val) else None
 
         return opts, var1_val, opts, var2_val
 
