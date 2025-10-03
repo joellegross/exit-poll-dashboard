@@ -75,147 +75,95 @@ def apply_multiple_filters(df, filters):
 
 import pandas as pd
 
-def prepare_grouped_data(
-    df, denom, num, weight_col=None, hide_missing=True, hide_excluded=True, total_label="Total"
-):
+def prepare_grouped_data(df, denom, num, weight_col=None, hide_missing=True, hide_excluded=True):
     dff = df.copy()
 
-    # Optional filters
     if hide_missing:
         dff = dff[dff[denom].notna() & dff[num].notna()]
-    if hide_excluded and "EXCLUDED_FLAG" in dff.columns:
-        dff = dff[~dff["EXCLUDED_FLAG"].astype(bool)]
+    if hide_excluded and 'EXCLUDED_FLAG' in dff.columns:
+        dff = dff[~dff['EXCLUDED_FLAG'].astype(bool)]
 
-    # Unified weight column (1.0 if none provided)
-    if weight_col and weight_col in dff.columns:
+    use_weights = weight_col and weight_col in dff.columns
+    if use_weights:
         dff = dff.copy()
-        dff["_w"] = pd.to_numeric(dff[weight_col], errors="coerce").fillna(0.0)
+        dff[weight_col] = pd.to_numeric(dff[weight_col], errors="coerce").fillna(0.0)
+
+    if use_weights:
+        grouped_w = (
+            dff.groupby([denom, num], dropna=False)[weight_col]
+               .sum()
+               .reset_index()
+               .rename(columns={weight_col: "WeightSum"})
+        )
+        count_df = grouped_w.rename(columns={"WeightSum": "Count"})
     else:
-        dff["_w"] = 1.0
-
-    # Unweighted counts for display
-    count_df = (
-        dff.groupby([denom, num], dropna=False)
-           .size()
-           .reset_index(name="Count")
-    )
-
-    # Weighted sums for percentages
-    weight_df = (
-        dff.groupby([denom, num], dropna=False)["_w"]
-           .sum()
-           .reset_index()
-           .rename(columns={"_w": "Weight"})
-    )
-
-    # Merge so percent_df has unweighted Count but % from weighted totals
-    percent_df = (
-        count_df.merge(weight_df, on=[denom, num], how="outer")
-                .fillna({"Count": 0, "Weight": 0.0})
-    )
-
-    # Percent within each denom (weighted)
-    totals_w_by_denom = percent_df.groupby(denom, dropna=False)["Weight"].transform("sum")
-    percent_df["Percentage"] = (percent_df["Weight"] / totals_w_by_denom * 100).fillna(0.0)
-
-    # Overall rows
-    overall_c = (
-        count_df.groupby(num, dropna=False)["Count"]
-                .sum()
-                .reset_index()
-                .assign(**{denom: total_label})
-    )
-    overall_w = (
-        weight_df.groupby(num, dropna=False)["Weight"]
-                 .sum()
-                 .reset_index()
-                 .assign(**{denom: total_label})
-    )
-    overall_p = (
-        overall_c.merge(overall_w, on=[denom, num], how="outer")
-                 .fillna({"Count": 0, "Weight": 0.0})
-    )
-    overall_p["Percentage"] = (
-        overall_p["Weight"] / overall_p["Weight"].sum() * 100
-    ).fillna(0.0)
-
-    count_out   = pd.concat([count_df, overall_c], ignore_index=True)
-    percent_out = pd.concat([percent_df, overall_p], ignore_index=True)
-
-    percent_out = percent_out.drop(columns=["Weight"])
-
-    def _sort_total_last(frame):
-        is_total = (frame[denom].astype(str) == str(total_label)).astype(int)
-        return (
-            frame.assign(__is_total=is_total)
-                 .sort_values(["__is_total", denom, num], kind="mergesort")
-                 .drop(columns="__is_total")
-                 .reset_index(drop=True)
+        count_df = (
+            dff.groupby([denom, num], dropna=False)
+               .size()
+               .reset_index(name="Count")
         )
 
-    return _sort_total_last(count_out), _sort_total_last(percent_out)
+    totals = count_df.groupby(denom, dropna=False)["Count"].transform("sum")
+    percent_df = count_df.copy()
+    percent_df["Percentage"] = (percent_df["Count"] / totals * 100).fillna(0)
 
-# ================== SOLO helpers =====================
-def prepare_solo_data(
-    df,
-    var,
-    weight_col=None,
-    hide_missing=True,
-    hide_excluded=True,
-    include_percent=True
-):
+    overall_c = (
+        count_df.groupby(num, dropna=False)["Count"].sum().reset_index()
+    )
+    overall_c[denom] = "Total"
+
+    overall_p = overall_c.copy()
+    overall_p["Percentage"] = (
+        overall_p["Count"] / overall_p["Count"].sum() * 100
+    ).fillna(0)
+
+
+    count_df  = pd.concat([count_df, overall_c], ignore_index=True)
+    percent_df = pd.concat([percent_df, overall_p], ignore_index=True)
+
+    def _sort_total_last(frame):
+        is_total = (frame[denom].astype(str) == "Total").astype(int)
+        return (frame.assign(__is_total=is_total)
+                     .sort_values(["__is_total", denom, num])
+                     .drop(columns="__is_total")
+                     .reset_index(drop=True))
+
+    return _sort_total_last(count_df), _sort_total_last(percent_df)
+
+def prepare_solo_data(df, var, weight_col=None, hide_missing=True, hide_excluded=True):
+
     dff = df.copy()
 
-    # Optional filters
     if hide_missing:
         dff = dff[dff[var].notna()]
     if hide_excluded and "EXCLUDED_FLAG" in dff.columns:
         dff = dff[~dff["EXCLUDED_FLAG"].astype(bool)]
 
-    # Unified weight column (1.0 if none provided)
-    if weight_col and (weight_col in dff.columns):
+    use_weights = bool(weight_col) and (weight_col in dff.columns)
+    if use_weights:
         dff = dff.copy()
-        dff["_w"] = pd.to_numeric(dff[weight_col], errors="coerce").fillna(0.0)
+        dff[weight_col] = pd.to_numeric(dff[weight_col], errors="coerce").fillna(0.0)
+
+        count_df = (
+            dff.groupby(var, dropna=False)[weight_col]
+              .sum()
+              .reset_index()
+              .rename(columns={weight_col: "Count"})
+        )
     else:
-        dff["_w"] = 1.0
+        count_df = (
+            dff.groupby(var, dropna=False)
+              .size()
+              .reset_index(name="Count")
+        )
 
-    # Unweighted counts
-    count_df = (
-        dff.groupby(var, dropna=False)
-           .size()
-           .reset_index(name="Count")
-           .sort_values(by=var, key=lambda s: s.astype(str))
-           .reset_index(drop=True)
-    )
+    total = float(count_df["Count"].sum())
+    percent_df = count_df.copy()
+    percent_df["Percentage"] = (percent_df["Count"] / total * 100.0).fillna(0.0).round(2) if total else 0.0
 
-    if not include_percent:
-        return count_df, None
-
-    # Weighted totals for percentages
-    weight_df = (
-        dff.groupby(var, dropna=False)["_w"]
-           .sum()
-           .reset_index()
-           .rename(columns={"_w": "Weight"})
-    )
-
-    percent_df = (
-        count_df.merge(weight_df, on=var, how="outer")
-                .fillna({"Count": 0, "Weight": 0.0})
-    )
-
-    total_w = float(percent_df["Weight"].sum())
-    if total_w > 0:
-        percent_df["Percentage"] = (percent_df["Weight"] / total_w * 100.0).round(2)
-    else:
-        percent_df["Percentage"] = 0.0
-
-    percent_df = (
-        percent_df.drop(columns=["Weight"])
-                  .sort_values(by=var, key=lambda s: s.astype(str))
-                  .reset_index(drop=True)
-    )
-
+    def _safe_key(x): return str(x)
+    count_df    = count_df.sort_values(by=var, key=lambda s: s.map(_safe_key)).reset_index(drop=True)
+    percent_df  = percent_df.sort_values(by=var, key=lambda s: s.map(_safe_key)).reset_index(drop=True)
     return count_df, percent_df
 
 def create_solo_chart(percent_df, var, remainder_label="N/A", eps=1e-6):
