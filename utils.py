@@ -104,12 +104,10 @@ def prepare_grouped_data(df, denom, num, weight_col=None, hide_missing=True, hid
                .reset_index(name="Count")
         )
 
-    # --- Percentages (normalize within denom)
     totals = count_df.groupby(denom, dropna=False)["Count"].transform("sum")
     percent_df = count_df.copy()
     percent_df["Percentage"] = (percent_df["Count"] / totals * 100).fillna(0)
 
-    # --- Overall “Total” rows ---
     overall_c = (
         count_df.groupby(num, dropna=False)["Count"].sum().reset_index()
     )
@@ -135,80 +133,66 @@ def prepare_grouped_data(df, denom, num, weight_col=None, hide_missing=True, hid
     return _sort_total_last(count_df), _sort_total_last(percent_df)
 
 # ================== SOLO helpers =====================
-def prepare_solo_data(df, var, weight_col=None, hide_missing=True, hide_excluded=True):
-    """
-    Returns (count_df, percent_df) for a single variable.
-    Columns: [var, Count] and [var, Count, Percentage]
-    """
+def prepare_solo_data(df, var, weight_col=None, hide_missing=True, hide_excluded=True, include_percent=True):
     dff = df.copy()
 
-    # Optional filters
     if hide_missing:
         dff = dff[dff[var].notna()]
     if hide_excluded and "EXCLUDED_FLAG" in dff.columns:
         dff = dff[~dff["EXCLUDED_FLAG"].astype(bool)]
 
-    # Weights
     use_weights = bool(weight_col) and (weight_col in dff.columns)
     if use_weights:
         dff = dff.copy()
         dff[weight_col] = pd.to_numeric(dff[weight_col], errors="coerce").fillna(0.0)
-
-        count_df = (
-            dff.groupby(var, dropna=False)[weight_col]
-              .sum()
-              .reset_index()
-              .rename(columns={weight_col: "Count"})
-        )
+        count_df = (dff.groupby(var, dropna=False)[weight_col]
+                      .sum().reset_index().rename(columns={weight_col: "Count"}))
     else:
-        count_df = (
-            dff.groupby(var, dropna=False)
-              .size()
-              .reset_index(name="Count")
-        )
+        count_df = (dff.groupby(var, dropna=False)
+                      .size().reset_index(name="Count"))
+
+    # string-safe sort
+    count_df = count_df.sort_values(by=var, key=lambda s: s.astype(str)).reset_index(drop=True)
+
+    if not include_percent:
+        return count_df, None
 
     total = float(count_df["Count"].sum())
     percent_df = count_df.copy()
     percent_df["Percentage"] = (percent_df["Count"] / total * 100.0).fillna(0.0).round(2) if total else 0.0
-
-    # Keep categories sorted (string-safe)
-    def _safe_key(x): return str(x)
-    count_df    = count_df.sort_values(by=var, key=lambda s: s.map(_safe_key)).reset_index(drop=True)
-    percent_df  = percent_df.sort_values(by=var, key=lambda s: s.map(_safe_key)).reset_index(drop=True)
+    percent_df = percent_df.sort_values(by=var, key=lambda s: s.astype(str)).reset_index(drop=True)
     return count_df, percent_df
 
-def create_solo_chart(percent_df, var):
+def create_solo_chart(percent_df, var, remainder_label="Unaccounted", eps=1e-6):
     """
     Donut pie for a single variable distribution.
-    Excluded values (EXCLUDE_VALUES) are shown as gray and relabeled 'N/A'.
+    - Keeps labels/tooltip equal to your df's 'Percentage' values.
+    - Adds a gray remainder slice if total < 100 so areas sum to 100.
+    - Collapses excluded values to 'N/A' (gray).
     """
     if percent_df.empty:
         return html.Div()
 
-    # --- Normalize excluded values ---
+    df = percent_df.copy()
+
+    # Excluded → "N/A"
     exclude_set = set(EXCLUDE_VALUES) | {""}
-    percent_df = percent_df.copy()
-    percent_df[var] = percent_df[var].apply(
-        lambda v: "N/A" if str(v).strip() in exclude_set else v
-    )
+    df[var] = df[var].apply(lambda v: "N/A" if str(v).strip() in exclude_set else v)
 
-    # Unique categories after collapsing excluded
-    var_values = percent_df[var].dropna().unique()
+    # Ensure numeric percentages
+    df["__pct__"] = pd.to_numeric(df["Percentage"], errors="coerce").fillna(0.0)
 
-    # Candidate-specific coloring check
-    normalized_party_lookup = {
-        name.lower().strip(): party for name, party in CANDIDATE_PARTY_MAP.items()
-    }
-    num_matches = sum(
-        1 for v in var_values if isinstance(v, str) and v.lower().strip() in normalized_party_lookup
-    )
+    # Color map (candidate-aware if applicable)
+    var_values = df[var].dropna().unique()
+    normalized_party_lookup = {name.lower().strip(): party for name, party in CANDIDATE_PARTY_MAP.items()}
+    num_matches = sum(1 for v in var_values if isinstance(v, str) and v.lower().strip() in normalized_party_lookup)
     is_pres_candidate_question = num_matches >= max(1, len(var_values) / 2)
 
     if is_pres_candidate_question:
         color_map = {}
         for name in var_values:
-            norm_name = name.lower().strip() if isinstance(name, str) else str(name).lower().strip()
-            party = normalized_party_lookup.get(norm_name, "Other")
+            k = name.lower().strip() if isinstance(name, str) else str(name).lower().strip()
+            party = normalized_party_lookup.get(k, "Other")
             color_map[name] = PARTY_COLORS.get(party, PARTY_COLORS["Other"])
     else:
         default_colors = px.colors.qualitative.Set3 + px.colors.qualitative.Set1
@@ -217,22 +201,36 @@ def create_solo_chart(percent_df, var):
             for i, cat in enumerate(sorted(var_values, key=lambda x: str(x)))
         }
 
-    # Force N/A to gray
+    # Force N/A + remainder to gray
     color_map["N/A"] = "#D3D3D3"
+    color_map[remainder_label] = "#D3D3D3"
+
+    # Add remainder wedge if needed
+    total = float(df["__pct__"].sum())
+    if total < 100 - eps:
+        df = pd.concat(
+            [df, pd.DataFrame({var: [remainder_label], "__pct__": [100.0 - total], "Percentage": [100.0 - total]})],
+            ignore_index=True
+        )
+
+    # Keep a display column that mirrors your df for labels/tooltip
+    df["__display__"] = df["Percentage"]
 
     fig = px.pie(
-        percent_df,
+        df,
         names=var,
-        values="Percentage",
+        values="__pct__",                 # areas (with possible remainder) → sum to 100
         hole=0.5,
         color=var,
         color_discrete_map=color_map,
+        custom_data=["__display__"]       # your original df percentages for tooltip/labels
     )
 
+    # Labels = df %, Tooltip = df % + normalized chart share
     fig.update_traces(
-        text=[f"{int(v)}%" if v > 0 else "" for v in percent_df["Percentage"]],
-        textinfo="text",
-        hovertemplate="%{label}: %{value:.1f}%<extra></extra>",
+        texttemplate="%{customdata[0]:.0f}%",
+        hovertemplate="%{label}: %{customdata[0]:.1f}%%"
+                      "<br>share in chart: %{percent:.1%}<extra></extra>",
         sort=False,
     )
 
@@ -242,7 +240,6 @@ def create_solo_chart(percent_df, var):
     )
 
     return dcc.Graph(figure=fig)
-
 def format_table_data(grouped, denom, num, y_col, mode):
     grouped_wide = (
         grouped
@@ -308,54 +305,67 @@ def format_solo_table(grouped: pd.DataFrame, var: str, y_col: str, mode: str):
     data = df_out.to_dict("records")
     return columns, data
 
-def create_percent_charts(percent_df, denom, num):
-    """
-    Create donut pie charts for each category of denom, showing distribution of num.
-    Excluded values (EXCLUDE_VALUES) are shown as gray and relabeled 'N/A'.
-    """
+def _norm(v):
+    return None if v is None else str(v).strip().lower()
+
+_EXCLUDE_NORM = {_norm(v) for v in EXCLUDE_VALUES}
+
+def _is_excluded(v):
+    return _norm(v) in _EXCLUDE_NORM
+
+
+def create_percent_charts(percent_df, denom, num, remainder_label="Unaccounted", eps=1e-6):
     if denom is None or num is None or percent_df.empty:
         return html.Div()
 
-    grouped = percent_df[percent_df[denom].astype(str) != "Total"].copy()
-    figures = []
+    # Drop the "Total" row and any rows whose *denominator value* is excluded
+    df = percent_df[percent_df[denom].astype(str) != "Total"].copy()
+    df = df[~df[denom].apply(_is_excluded)].copy()   # <-- no chart for excluded denom values
 
-    keys = grouped[denom].dropna().unique()
-    var_col = num
-    var_values = grouped[var_col].dropna().unique()
+    # Make sure percentages are numeric
+    df["__pct__"] = pd.to_numeric(df["Percentage"], errors="coerce").fillna(0.0)
 
-    # build default color map
+    # Map excluded *numerator* values to "N/A" so they don't get their own colored category
+    df[num] = df[num].apply(lambda v: "N/A" if _is_excluded(v) else v)
+
+    # Colors
     default_colors = px.colors.qualitative.Set3 + px.colors.qualitative.Set1
-    color_map = {
-        cat: default_colors[i % len(default_colors)]
-        for i, cat in enumerate(sorted(var_values, key=lambda x: str(x)))
-    }
+    base_vals = [v for v in df[num].dropna().unique() if v != "N/A"]
+    base_vals = sorted(base_vals, key=lambda x: str(x))
+    base_color_map = {cat: default_colors[i % len(default_colors)] for i, cat in enumerate(base_vals)}
+    base_color_map["N/A"] = "#D3D3D3"
+    base_color_map[remainder_label] = "#D3D3D3"
 
-    # override excluded values → gray and relabel to N/A
-    exclude_set = set(EXCLUDE_VALUES) | {""}
-    grouped[var_col] = grouped[var_col].apply(
-        lambda v: "N/A" if str(v).strip() in exclude_set else v
-    )
-    color_map["N/A"] = "#D3D3D3"  # gray
-
-    for key_val in keys:
-        filtered = grouped.loc[grouped[denom] == key_val].copy()
-        if filtered.empty:
+    figures = []
+    for key_val in df[denom].dropna().unique():
+        sub = df.loc[df[denom] == key_val, [denom, num, "__pct__"]].copy()
+        if sub.empty:
             continue
 
+        total = float(sub["__pct__"].sum())
+        if total < 100 - eps:
+            sub = pd.concat([
+                sub,
+                pd.DataFrame({denom: [key_val], num: [remainder_label], "__pct__": [100.0 - total]})
+            ], ignore_index=True)
+
+        sub["__display__"] = sub["__pct__"]
+
         fig = px.pie(
-            filtered,
-            names=var_col,
-            values="Percentage",
+            sub,
+            names=num,
+            values="__pct__",
             hole=0.5,
             title=str(key_val),
-            color=var_col,
-            color_discrete_map=color_map,
+            color=num,
+            color_discrete_map=base_color_map,
+            custom_data=["__display__"],
         )
 
         fig.update_traces(
-            text=[f"{int(v)}%" if v > 0 else "" for v in filtered["Percentage"]],
-            textinfo="text",
-            hovertemplate="%{label}: %{value:.1f}%<extra></extra>",
+            texttemplate="%{customdata[0]:.0f}%",
+            hovertemplate="%{label}: %{customdata[0]:.1f}%%"
+                          "<br>share in chart: %{percent:.1%}<extra></extra>",
             sort=False,
         )
 
