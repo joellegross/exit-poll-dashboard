@@ -243,40 +243,14 @@ def create_solo_chart(percent_df, var, remainder_label="N/A", eps=1e-6):
     )
 
     return dcc.Graph(figure=fig)
-def format_table_data(
-    grouped,
-    denom,
-    num,
-    y_col,
-    mode,
-    exclude_values=None,    # e.g., ["Omit", "Prefer not to say", "(Blank)"]
-    keep_total=True,
-    total_label="Total",
-):
-    exclude_values = exclude_values or []
-    def _norm(x):
-        return str(x).strip()
-    exclude_set = {_norm(v) for v in exclude_values} | {""}
-
-    grouped_wide = grouped.pivot_table(
-        index=num, columns=denom, values=y_col, aggfunc="sum"
+def format_table_data(grouped, denom, num, y_col, mode):
+    grouped_wide = (
+        grouped
+        .pivot_table(index=num, columns=denom, values=y_col, aggfunc="sum")
     )
 
-    # Clean numeric issues
-    grouped_wide = (grouped_wide
-                    .apply(pd.to_numeric, errors="coerce")
-                    .replace([np.inf, -np.inf], np.nan))
-
-    idx_labels = pd.Index([_norm(v) for v in grouped_wide.index], name=grouped_wide.index.name)
-    row_keep_mask = ~idx_labels.isin(exclude_set)
-    grouped_wide = grouped_wide.loc[row_keep_mask]
-
-    col_labels = pd.Index([_norm(c) for c in grouped_wide.columns], name=grouped_wide.columns.name)
-    if keep_total and total_label in col_labels:
-        col_keep_mask = (~col_labels.isin(exclude_set)) | (col_labels == total_label)
-    else:
-        col_keep_mask = ~col_labels.isin(exclude_set)
-    grouped_wide = grouped_wide.loc[:, col_keep_mask]
+    grouped_wide = grouped_wide.apply(pd.to_numeric, errors="coerce") \
+                               .replace([np.inf, -np.inf], np.nan)
 
     if mode == "percent":
         grouped_wide = grouped_wide.fillna(0).round(0).astype("Int64")
@@ -287,19 +261,18 @@ def format_table_data(
     df_out = grouped_wide.reset_index()
     df_out = df_out.where(pd.notna(df_out), None)
 
-    if keep_total and total_label in df_out.columns:
-        other_cols = [c for c in df_out.columns if c not in (total_label,)]
-        df_out = df_out[other_cols + [total_label]]
+    other_columns = [col for col in df_out.columns if col != "Total"]
+    new_column_order = other_columns + ["Total"] if "Total" in df_out.columns else other_columns
+    df_out = df_out[new_column_order]
 
     columns = [{"name": str(c), "id": str(c)} for c in df_out.columns]
     data = df_out.to_dict("records")
 
     return grouped_wide, columns, data
 
+
 def format_solo_table(grouped: pd.DataFrame, var: str, y_col: str, mode: str):
-    """
-    Table for solo variable: [var, Count] or [var, Percentage]
-    """
+
     if grouped.empty or var not in grouped.columns or y_col not in grouped.columns:
         return [], []
 
@@ -324,8 +297,6 @@ def format_solo_table(grouped: pd.DataFrame, var: str, y_col: str, mode: str):
 
     df_out = df_out.where(pd.notna(df_out), None)
     columns = [{"name": str(c), "id": str(c)} for c in df_out.columns]
-    df_out = df_out[~df_out[var].isin(EXCLUDE_VALUES)]
-
     data = df_out.to_dict("records")
     return columns, data
 
