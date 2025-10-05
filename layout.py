@@ -110,15 +110,38 @@ def create_layout():
             style={"display": "none"},  # hide initially
         ),
         html.Br(),
-        html.Div(id="groupby-table-container", children=[
-            dash_table.DataTable(
-                id="groupby-table",
-                columns=[],
-                data=[],
-                style_table={'overflowX': 'auto'},
-                style_cell={'textAlign': 'left', 'padding': '5px'},
-                page_size=20,
-            )
+        html.Div(
+            id="groupby-table-container",
+            children=[
+                dash_table.DataTable(
+                    id="groupby-table",
+                    columns=[],
+                    data=[],
+                    style_table={'overflowX': 'auto'},
+                    style_cell={
+                        'textAlign': 'left',
+                        'padding': '5px',
+                        'fontSize': '14px',
+                    },
+                    style_data_conditional=[
+                        {
+                            "if": {"filter_query": '{denom} = "Total"'},
+                            "backgroundColor": "#f2f2f2",
+                            "fontWeight": "bold",
+                        },
+                        {
+                            "if": {"filter_query": '{num} = "Total"'},
+                            "backgroundColor": "#f2f2f2",
+                            "fontWeight": "bold",
+                        },
+                        {
+                            "if": {"filter_query": '{denom} = "Total" && {num} = "Total"'},
+                            "backgroundColor": "#e0e0e0",
+                            "fontWeight": "bold",
+                        },
+                    ],
+                    page_size=20,
+                )
         ]),
 
         html.Div(

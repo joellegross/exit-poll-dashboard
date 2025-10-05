@@ -106,24 +106,47 @@ def prepare_grouped_data(df, denom, num, weight_col=None, hide_missing=True, hid
     )
     overall_c[denom] = "Total"
 
+
     overall_p = overall_c.copy()
+
     overall_p["Percentage"] = (
         overall_p["Count"] / overall_p["Count"].sum() * 100
     ).fillna(0)
 
+    row_c = (
+        count_df.groupby(denom, dropna=False)["Count"]
+        .sum()
+        .reset_index()
+    )
+    row_c[num] = "Total"
 
-    count_df  = pd.concat([count_df, overall_c], ignore_index=True)
-    percent_df = pd.concat([percent_df, overall_p], ignore_index=True)
+    row_p = row_c.copy()
+    row_p["Percentage"] = (
+        row_p["Count"] / row_p["Count"].sum() * 100
+    ).fillna(0)
 
-    def _sort_total_last(frame):
-        is_total = (frame[denom].astype(str) == "Total").astype(int)
-        return (frame.assign(__is_total=is_total)
-                     .sort_values(["__is_total", denom, num])
-                     .drop(columns="__is_total")
-                     .reset_index(drop=True))
+    grand_c = pd.DataFrame({denom: ["Total"], num: ["Total"], "Count": [count_df["Count"].sum()]})
+    grand_p = pd.DataFrame(
+        {denom: ["Total"], num: ["Total"], "Percentage": [100.0], "Count": [count_df["Count"].sum()]})
 
-    return _sort_total_last(count_df), _sort_total_last(percent_df)
+    count_df = pd.concat([count_df, row_c, overall_c, grand_c], ignore_index=True)
+    percent_df = pd.concat([percent_df, row_p, overall_p, grand_p], ignore_index=True)
 
+    count_df[denom] = move_total_last(count_df[denom])
+    count_df[num] = move_total_last(count_df[num])
+    percent_df[denom] = move_total_last(percent_df[denom])
+    percent_df[num] = move_total_last(percent_df[num])
+
+    count_df = count_df.sort_values([denom, num]).reset_index(drop=True)
+    percent_df = percent_df.sort_values([denom, num]).reset_index(drop=True)
+
+
+    return count_df, percent_df
+
+
+def move_total_last(series):
+    vals = [v for v in series.unique() if v != "Total"] + ["Total"]
+    return pd.Categorical(series, categories=vals, ordered=True)
 def prepare_solo_data(df, var, weight_col=None, hide_missing=True, hide_excluded=True):
 
     dff = df.copy()
@@ -226,8 +249,8 @@ def create_solo_chart(percent_df, var, remainder_label="N/A", eps=1e-6):
     # Labels = df %, Tooltip = df % + normalized chart share
     fig.update_traces(
         texttemplate="%{customdata[0]:.0f}%",
-        hovertemplate="%{label}: %{customdata[0]:.1f}%%"
-                      "<br>share in chart: %{percent:.1%}<extra></extra>",
+        hovertemplate="%{label}"
+                      "<br> %{percent:.1%}<extra></extra>",
         sort=False,
     )
 
@@ -352,8 +375,8 @@ def create_percent_charts(percent_df, denom, num, remainder_label="Unaccounted",
 
         fig.update_traces(
             texttemplate="%{customdata[0]:.0f}%",
-            hovertemplate="%{label}: %{customdata[0]:.1f}%%"
-                          "<br>share in chart: %{percent:.1%}<extra></extra>",
+            hovertemplate="%{label}"
+                          "<br> %{percent:.1%}<extra></extra>",
             sort=False,
         )
 
