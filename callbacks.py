@@ -244,7 +244,7 @@ def register_callbacks(app, df_path):
             y_col = "Percentage" if mode == "percent" else "Count"
 
             if grouped.empty:
-                return html.P(f"No respondents answered {solo_var}.", style={"color": "red"}), [], [], ""
+                return html.P("No respondents answered both selected questions.", style={"color": "red"}), [], [], ""
 
             chart_output = create_solo_chart(percent_df, solo_var)
             columns, data = format_solo_table(grouped, solo_var, y_col, mode)
