@@ -286,7 +286,7 @@ def register_callbacks(app, df_path):
 
             sample_df = df_file[df_file[denom].notna() & df_file[num].notna()]
             sample_size = len(sample_df)
-            sample_size_text = f"Sample size (non-missing): {sample_size:,}" if sample_size else ""
+            sample_size_text = f"Sample size: {sample_size:,}" if sample_size else ""
 
             question_heading = html.Div([
                 html.Div(f"{denom_q}", style={"fontSize": "22px", "fontWeight": "bold",

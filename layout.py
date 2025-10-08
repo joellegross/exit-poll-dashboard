@@ -7,9 +7,11 @@ def create_layout():
     df_path = os.path.join("data", "datafile_paths_dynamic.csv")
     df = pd.read_csv(df_path)
 
-    year_options = sorted(df["year"].dropna().unique(), reverse=True)
+    #year_options = sorted(df["year"].dropna().unique(), reverse=True)
+    year_options = [2017]
     election_options = sorted(df["election_folder"].dropna().unique())
-    locality_options = sorted(df["locality_type"].dropna().unique())
+    #locality_options = sorted(df["locality_type"].dropna().unique())
+    locality_options = ["State"]
     party_options = sorted(df["party"].dropna().unique())
 
     return html.Div([
