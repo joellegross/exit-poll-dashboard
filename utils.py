@@ -183,7 +183,7 @@ def prepare_solo_data(df, var, weight_col=None, hide_missing=True, hide_excluded
     percent_df  = percent_df.sort_values(by=var, key=lambda s: s.map(_safe_key)).reset_index(drop=True)
     return count_df, percent_df
 
-def create_solo_chart(percent_df, var, remainder_label="N/A", eps=1e-6):
+def create_solo_chart(percent_df, var, remainder_label="N/A", eps=1e-6, filters = None):
     """
     Donut pie for a single variable distribution.
     - Keeps labels/tooltip equal to your df's 'Percentage' values.
@@ -232,6 +232,12 @@ def create_solo_chart(percent_df, var, remainder_label="N/A", eps=1e-6):
             [df, pd.DataFrame({var: [remainder_label], "__pct__": [100.0 - total], "Percentage": [100.0 - total]})],
             ignore_index=True
         )
+    title = ""
+    if filters:
+        filter_text = ", ".join([f"{k} = {v}" for k, v in filters.items()])
+        title = f"<sup style='color:red;'>Filtered by {filter_text}</sup>"
+    else:
+        title = title
 
     # Keep a display column that mirrors your df for labels/tooltip
     df["__display__"] = df["Percentage"]
@@ -242,6 +248,7 @@ def create_solo_chart(percent_df, var, remainder_label="N/A", eps=1e-6):
         values="__pct__",                 # areas (with possible remainder) → sum to 100
         hole=0.5,
         color=var,
+        title = title,
         color_discrete_map=color_map,
         custom_data=["__display__"]       # your original df percentages for tooltip/labels
     )
@@ -256,7 +263,9 @@ def create_solo_chart(percent_df, var, remainder_label="N/A", eps=1e-6):
 
     fig.update_layout(
         margin=dict(t=50, b=50, l=50, r=50),
-        showlegend=True
+        showlegend=True,
+        title_font=dict(size=24),
+
     )
 
     return dcc.Graph(figure=fig)
@@ -289,13 +298,18 @@ def format_table_data(grouped, denom, num, y_col, mode):
 
 
 def format_solo_table(grouped: pd.DataFrame, var: str, y_col: str, mode: str):
-
     if grouped.empty or var not in grouped.columns or y_col not in grouped.columns:
         return [], []
 
     df_out = grouped[[var, y_col]].copy()
     df_out[var] = df_out[var].astype(str)
 
+    # --- Add total row before formatting ---
+    total_val = pd.to_numeric(df_out[y_col], errors="coerce").fillna(0).sum()
+    total_row = pd.DataFrame({var: ["Total"], y_col: [total_val]})
+    df_out = pd.concat([df_out, total_row], ignore_index=True)
+
+    # --- Format based on mode ---
     if mode == "percent":
         df_out[y_col] = (
             pd.to_numeric(df_out[y_col], errors="coerce")
@@ -304,6 +318,8 @@ def format_solo_table(grouped: pd.DataFrame, var: str, y_col: str, mode: str):
               .astype(int)
               .astype(str) + "%"
         )
+        # Set total to 100%
+        df_out.loc[df_out[var] == "Total", y_col] = "100%"
     else:
         df_out[y_col] = (
             pd.to_numeric(df_out[y_col], errors="coerce")
@@ -313,8 +329,10 @@ def format_solo_table(grouped: pd.DataFrame, var: str, y_col: str, mode: str):
         )
 
     df_out = df_out.where(pd.notna(df_out), None)
+
     columns = [{"name": str(c), "id": str(c)} for c in df_out.columns]
     data = df_out.to_dict("records")
+
     return columns, data
 
 def _norm(v):
@@ -325,12 +343,13 @@ _EXCLUDE_NORM = {_norm(v) for v in EXCLUDE_VALUES}
 def _is_excluded(v):
     return _norm(v) in _EXCLUDE_NORM
 
-def create_percent_charts(percent_df, denom, num):
+def create_percent_charts(percent_df, denom, num, filters):
 
     if denom is None or num is None or percent_df.empty:
         return html.Div()
 
     grouped = percent_df[percent_df[denom].astype(str) != "Total"].copy()
+    grouped = percent_df[percent_df[num].astype(str) != "Total"].copy()
     figures = []
 
     keys = grouped[denom].dropna().unique()
@@ -359,6 +378,13 @@ def create_percent_charts(percent_df, denom, num):
 
     for key_val in keys:
         filtered = grouped.loc[grouped[denom] == key_val].copy()
+        title = str(key_val)
+        if filters:
+            filter_text = ", ".join([f"{k} = {v}" for k, v in filters.items()])
+            title = f"{title}<br><sup style='color:red;'>Filtered by {filter_text}</sup>"
+        else:
+            title = title
+
         if filtered.empty:
             continue
 
@@ -373,7 +399,7 @@ def create_percent_charts(percent_df, denom, num):
             names=var_col,
             values="Percentage",
             hole=0.5,
-            title=str(key_val),
+            title=title,
             color=var_col,
             color_discrete_map=color_map,
         )
@@ -388,6 +414,7 @@ def create_percent_charts(percent_df, denom, num):
         fig.update_layout(
             legend=dict(x=1.2, y=0.5, xanchor="left", orientation="v", font=dict(size=12)),
             margin=dict(t=50, b=50, l=50, r=150),
+            title_font=dict(size=24)
         )
 
         figures.append(

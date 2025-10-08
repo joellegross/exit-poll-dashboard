@@ -246,7 +246,7 @@ def register_callbacks(app, df_path):
             if grouped.empty:
                 return html.P("No respondents answered both selected questions.", style={"color": "red"}), [], [], ""
 
-            chart_output = create_solo_chart(percent_df, solo_var)
+            chart_output = create_solo_chart(percent_df, solo_var, filters=filters)
             columns, data = format_solo_table(grouped, solo_var, y_col, mode)
 
             solo_q = VARIABLE_METADATA.get(solo_var, {}).get("question", "")
@@ -278,7 +278,7 @@ def register_callbacks(app, df_path):
             if grouped.empty:
                 return html.P("No respondents answered both selected questions.", style={"color": "red"}), [], [], ""
 
-            chart_output = create_percent_charts(percent_df, denom, num)
+            chart_output = create_percent_charts(percent_df, denom, num, filters)
             _, columns, data = format_table_data(grouped, denom, num, y_col, mode)
 
             denom_q = VARIABLE_METADATA.get(denom, {}).get("question", "")
