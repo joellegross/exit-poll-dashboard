@@ -272,6 +272,8 @@ def register_callbacks(app, df_path):
                 return [], [], [], []
 
             count_df, percent_df = prepare_grouped_data(df_file, denom, num, weight_col, True, True)
+            if count_df["Count"].sum() == 0:
+                return html.P("No data available.", style={"color": "red"}), [], [], ""
             grouped = percent_df if mode == "percent" else count_df
             y_col = "Percentage" if mode == "percent" else "Count"
 
@@ -279,6 +281,9 @@ def register_callbacks(app, df_path):
                 return html.P("No respondents answered both selected questions.", style={"color": "red"}), [], [], ""
 
             chart_output = create_percent_charts(percent_df, denom, num, filters)
+            if not chart_output:
+                return html.P("No data available.", style={"color": "red"}), [], [], ""
+
             _, columns, data = format_table_data(grouped, denom, num, y_col, mode)
 
             denom_q = VARIABLE_METADATA.get(denom, {}).get("question", "")
@@ -286,7 +291,7 @@ def register_callbacks(app, df_path):
 
             sample_df = df_file[df_file[denom].notna() & df_file[num].notna()]
             sample_size = len(sample_df)
-            sample_size_text = f"Sample size (non-missing): {sample_size:,}" if sample_size else ""
+            sample_size_text = f"Sample size: {sample_size:,}" if sample_size else ""
 
             question_heading = html.Div([
                 html.Div(f"{denom_q}", style={"fontSize": "22px", "fontWeight": "bold",

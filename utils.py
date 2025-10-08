@@ -386,7 +386,7 @@ def create_percent_charts(percent_df, denom, num, filters):
             title = title
 
         if filtered.empty:
-            continue
+           continue
 
         subtotal = float(filtered["Percentage"].sum())
         leftover = max(0.0, round(100.0 - subtotal, 0))
