@@ -76,7 +76,7 @@ def create_layout():
         html.Div(
             id="condition-container",
             children=[
-                html.Label("Condition on (optional)"),
+                html.Label("Filter by (optional)"),
                 dcc.Dropdown(
                     id="filter-var-dropdown",
                     options=[],

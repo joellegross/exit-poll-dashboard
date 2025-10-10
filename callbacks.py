@@ -275,10 +275,18 @@ def register_callbacks(app, df_path):
             grouped = percent_df if mode == "percent" else count_df
             y_col = "Percentage" if mode == "percent" else "Count"
 
+            if count_df["Count"].sum() == 0:
+                return html.P("No data available.", style={"color": "red"}), [], [], ""
+            grouped = percent_df if mode == "percent" else count_df
+            y_col = "Percentage" if mode == "percent" else "Count"
+
             if grouped.empty:
                 return html.P("No respondents answered both selected questions.", style={"color": "red"}), [], [], ""
 
             chart_output = create_percent_charts(percent_df, denom, num, filters)
+            if not chart_output:
+                return html.P("No data available.", style={"color": "red"}), [], [], ""
+
             _, columns, data = format_table_data(grouped, denom, num, y_col, mode)
 
             denom_q = VARIABLE_METADATA.get(denom, {}).get("question", "")
