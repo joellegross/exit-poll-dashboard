@@ -251,7 +251,7 @@ def register_callbacks(app, df_path):
 
             solo_q = VARIABLE_METADATA.get(solo_var, {}).get("question", "")
             sample_size = int(df_file[solo_var].notna().sum())
-            sample_size_text = f"Sample size (non-missing): {sample_size:,}" if sample_size else ""
+            sample_size_text = f"Sample size: {sample_size:,}" if sample_size else ""
 
             heading = html.Div([
                 html.Div(f"{solo_q}", style={"fontSize": "22px", "fontWeight": "bold", "marginBottom": "5px"})
