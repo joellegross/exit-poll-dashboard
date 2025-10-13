@@ -142,6 +142,10 @@ def process_file(filepath, year, election_folder, locality_type):
     except TypeError as e:
         pass
 
+    zip_pattern = re.compile(r'zip|zipcode|postal', re.IGNORECASE)
+    zip_cols = [col for col in df.columns if zip_pattern.search(col)]
+    if zip_cols:
+        df_labeled = df_labeled.drop(columns=zip_cols)
     df_labeled.to_csv(output_path, index=False)
 
     print(f"✅ Saved: {output_path}")

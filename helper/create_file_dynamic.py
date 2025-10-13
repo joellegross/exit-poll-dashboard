@@ -69,7 +69,7 @@ for year in os.listdir(ROOT_DIR):
                         "election_folder": election_folder,
                         "locality_type": locality_type if locality_type else "N/A",
                         "party": party,
-                        "path": rel_path  # ✅ Store relative path
+                        "path": rel_path
                     })
 
 df = pd.DataFrame(records)
