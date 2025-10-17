@@ -250,6 +250,11 @@ def register_callbacks(app, df_path):
             columns, data = format_solo_table(grouped, solo_var, y_col, mode)
 
             solo_q = VARIABLE_METADATA.get(solo_var, {}).get("question", "")
+            try:
+                df_file = df_file[df_file[solo_var].str.lower() != "did not vote"]
+            except:
+                pass
+
             sample_size = int(df_file[solo_var].notna().sum())
             sample_size_text = f"Sample size: {sample_size:,}" if sample_size else ""
 
@@ -290,6 +295,11 @@ def register_callbacks(app, df_path):
             num_q = VARIABLE_METADATA.get(num, {}).get("question", "")
 
             sample_df = df_file[df_file[denom].notna() & df_file[num].notna()]
+            try:
+                sample_df = sample_df[sample_df[denom].str.lower() != "did not vote"]
+                sample_df = sample_df[sample_df[num].str.lower() != "did not vote"]
+            except:
+                pass
             sample_size = len(sample_df)
             sample_size_text = f"Sample size: {sample_size:,}" if sample_size else ""
 
