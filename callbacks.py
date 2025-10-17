@@ -48,9 +48,11 @@ def register_callbacks(app, df_path):
     def update_state_options(year, election):
         dff = df[(df["year"] == year) & (df["election_folder"] == election)]
         valid_states = dff["state"].dropna()
-        valid_states = valid_states[~valid_states.str.upper().eq("NATIONAL")]
+        valid_states = valid_states[~valid_states.str.upper().isin(["NATIONAL", "GA"])]  # 🚫 remove NATIONAL + GA
         options = [{"label": s, "value": s} for s in sorted(valid_states.unique())]
-        return options, (options[0]["value"] if options else None)
+
+        return options,(options[0]["value"] if options else None)
+
 
 
     @app.callback(

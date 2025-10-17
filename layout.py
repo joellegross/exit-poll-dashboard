@@ -8,7 +8,7 @@ def create_layout():
     df = pd.read_csv(df_path)
 
     #year_options = sorted(df["year"].dropna().unique(), reverse=True)
-    year_options = [2017]
+    year_options = [2017, 2021]
     election_options = sorted(df["election_folder"].dropna().unique())
     #locality_options = sorted(df["locality_type"].dropna().unique())
     locality_options = ["State"]
