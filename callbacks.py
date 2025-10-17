@@ -241,7 +241,7 @@ def register_callbacks(app, df_path):
 
         # === SOLO VARIABLE ===
         if one_var and solo_var:
-            count_df, percent_df = prepare_solo_data(df_file, solo_var, weight_col, True, True)
+            count_df, percent_df = prepare_solo_data(df_file, solo_var, year, weight_col, True, True)
             grouped = percent_df if mode == "percent" else count_df
             y_col = "Percentage" if mode == "percent" else "Count"
 
@@ -252,6 +252,11 @@ def register_callbacks(app, df_path):
             columns, data = format_solo_table(grouped, solo_var, y_col, mode)
 
             solo_q = VARIABLE_METADATA.get(solo_var, {}).get("question", "")
+
+            try:
+                df_file = df_file[df_file[solo_var].str.lower() != "did not vote"]
+            except:
+                pass
             sample_size = int(df_file[solo_var].notna().sum())
             sample_size_text = f"Sample size: {sample_size:,}" if sample_size else ""
 
@@ -273,7 +278,7 @@ def register_callbacks(app, df_path):
             if not (denom and num and denom != num):
                 return [], [], [], []
 
-            count_df, percent_df = prepare_grouped_data(df_file, denom, num, weight_col, True, True)
+            count_df, percent_df = prepare_grouped_data(df_file, denom, num, year, weight_col, True, True)
             grouped = percent_df if mode == "percent" else count_df
             y_col = "Percentage" if mode == "percent" else "Count"
 
@@ -293,8 +298,14 @@ def register_callbacks(app, df_path):
 
             denom_q = VARIABLE_METADATA.get(denom, {}).get("question", "")
             num_q = VARIABLE_METADATA.get(num, {}).get("question", "")
-
             sample_df = df_file[df_file[denom].notna() & df_file[num].notna()]
+
+            try:
+                sample_df = sample_df[sample_df[denom].str.lower() != "did not vote"]
+                sample_df = sample_df[sample_df[num].str.lower() != "did not vote"]
+            except:
+                pass
+
             sample_size = len(sample_df)
             sample_size_text = f"Sample size: {sample_size:,}" if sample_size else ""
 

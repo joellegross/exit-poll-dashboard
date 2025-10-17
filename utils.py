@@ -13,6 +13,7 @@ EXCLUDE_VALUES = {
     "Did not vote", "None", "Other", "Omit",
     None, "", " ", "  ", "N/A", "NA"
 }
+
 # Load general presidential candidate party map
 candidate_map_path = os.path.join("data", "general_presidential_candidates_party_map.json")
 with open(candidate_map_path, "r") as f:
@@ -69,7 +70,7 @@ def apply_multiple_filters(df, filters):
 
     return dff
 
-def prepare_grouped_data(df, denom, num, weight_col=None, hide_missing=True, hide_excluded=True):
+def prepare_grouped_data(df, denom, num,year, weight_col=None, hide_missing=True, hide_excluded=True):
     dff = df.copy()
 
     if hide_missing:
@@ -77,6 +78,12 @@ def prepare_grouped_data(df, denom, num, weight_col=None, hide_missing=True, hid
     if hide_excluded and 'EXCLUDED_FLAG' in dff.columns:
         dff = dff[~dff['EXCLUDED_FLAG'].astype(bool)]
 
+    if year == 2025:
+        try:
+            dff = dff[dff[denom].str.lower() != "did not vote"]
+            dff = dff[dff[num].str.lower() != "did not vote"]
+        except:
+            pass
     use_weights = weight_col and weight_col in dff.columns
     if use_weights:
         dff = dff.copy()
@@ -147,7 +154,7 @@ def prepare_grouped_data(df, denom, num, weight_col=None, hide_missing=True, hid
 def move_total_last(series):
     vals = [v for v in series.unique() if v != "Total"] + ["Total"]
     return pd.Categorical(series, categories=vals, ordered=True)
-def prepare_solo_data(df, var, weight_col=None, hide_missing=True, hide_excluded=True):
+def prepare_solo_data(df, var, year, weight_col=None, hide_missing=True, hide_excluded=True):
 
     dff = df.copy()
 
@@ -155,6 +162,12 @@ def prepare_solo_data(df, var, weight_col=None, hide_missing=True, hide_excluded
         dff = dff[dff[var].notna()]
     if hide_excluded and "EXCLUDED_FLAG" in dff.columns:
         dff = dff[~dff["EXCLUDED_FLAG"].astype(bool)]
+
+    if year == 2025:
+        try:
+            dff = dff[dff[var].str.lower() != "did not vote"]
+        except:
+            pass
 
     use_weights = bool(weight_col) and (weight_col in dff.columns)
     if use_weights:
@@ -405,7 +418,7 @@ def create_percent_charts(percent_df, denom, num, filters):
         )
 
         fig.update_traces(
-            text=[f"{int(v)}%" if v > 0 else "" for v in filtered["Percentage"]],
+            text=[f"{round(v)}%" if v > 0 else "" for v in filtered["Percentage"]],
             textinfo="text",
             hovertemplate="%{label}: %{value:.1f}%<extra></extra>",
             sort=False,

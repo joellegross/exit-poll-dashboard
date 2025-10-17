@@ -27,6 +27,10 @@ KS,2014,General,State,,../data/2014/General/State/KS 2014.csv
 NC,2014,General,State,,../data/2014/General/State/NC 2014.csv
 GA,2014,General,State,,../data/2014/General/State/GA 2014.csv
 KY,2014,General,State,,../data/2014/General/State/KY 2014.csv
+VA,2025,General,State,,../data/2025/General/State/VA 2025.csv
+NJ,2025,General,State,,../data/2025/General/State/NJ 2025.csv
+CA,2025,General,State,,../data/2025/General/State/CA 2025.csv
+NYC,2025,General,State,,../data/2025/General/State/NYC 2025.csv
 National,2024,General,National,,../data/2024/General/National/National 2024.csv
 NC,2024,General,State,,../data/2024/General/State/NC 2024.csv
 GA,2024,General,State,,../data/2024/General/State/GA 2024.csv
