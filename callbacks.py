@@ -301,8 +301,8 @@ def register_callbacks(app, df_path):
             sample_df = df_file[df_file[denom].notna() & df_file[num].notna()]
 
             try:
-                sample_df = sample_df[sample_df[denom].str.lower() != "did not vote"]
-                sample_df = sample_df[sample_df[num].str.lower() != "did not vote"]
+                sample_df = sample_df[~sample_df[denom].astype(str).str.lower().str.strip().eq("did not vote")]
+                sample_df = sample_df[~sample_df[num].astype(str).str.lower().str.strip().eq("did not vote")]
             except:
                 pass
 

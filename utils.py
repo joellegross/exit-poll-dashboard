@@ -6,6 +6,8 @@ import json
 import plotly.express as px
 from dash import dcc, html
 import os
+import re
+
 
 EXCLUDED_COLS = {"ID", "PRECINCT", "STANUM", "BACKSIDE", "TELEPOLL", "CALL", "CDNUM", "VERSION",
                  "ZCODE1", "ZCODE2", "ZCODE3", "ZCODE4", "GEOCODE"}
@@ -80,8 +82,8 @@ def prepare_grouped_data(df, denom, num,year, weight_col=None, hide_missing=True
 
     if year == 2025:
         try:
-            dff = dff[dff[denom].str.lower() != "did not vote"]
-            dff = dff[dff[num].str.lower() != "did not vote"]
+            dff = dff[~dff[denom].astype(str).str.lower().eq("did not vote")]
+            dff = dff[~dff[num].astype(str).str.lower().eq("did not vote")]
         except:
             pass
     use_weights = weight_col and weight_col in dff.columns
@@ -282,14 +284,57 @@ def create_solo_chart(percent_df, var, remainder_label="N/A", eps=1e-6, filters 
     )
 
     return dcc.Graph(figure=fig)
+
+
+def is_age_var(name: str) -> bool:
+    return isinstance(name, str) and "age" in name.lower()
+
+def age_key(label):
+    s = str(label).strip().lower().replace("–", "-").replace("—", "-")
+    m = re.match(r"under\s*(\d+)", s)
+    if m: return (0, int(m.group(1)) - 1)
+    m = re.match(r"(\d+)\s*-\s*(\d+)", s)
+    if m: return (1, int(m.group(1)))
+    m = re.match(r"(\d+)\s*\+|(\d+)\s*or\s*over", s)
+    if m: return (2, int(m.group(1) or m.group(2)))
+    m = re.match(r"(\d+)$", s)
+    if m: return (1, int(m.group(1)))
+    return (3, s)
+
+
+def order_columns_conditional(df_out, num=None, denom=None):
+    first_col = None
+    if num in df_out.columns:
+        first_col = num
+    elif denom in df_out.columns:
+        first_col = denom
+
+    other_columns = [c for c in df_out.columns if c not in {first_col, "Total"}]
+
+    if is_age_variable(num) or is_age_variable(denom):
+        other_columns = sorted(other_columns, key=natural_age_sort_key)
+    else:
+        other_columns = sorted(other_columns, key=str.lower)
+
+    new_order = ([first_col] if first_col else []) + other_columns
+    if "Total" in df_out.columns:
+        new_order += ["Total"]
+
+    return df_out[new_order]
+
 def format_table_data(grouped, denom, num, y_col, mode):
     grouped_wide = (
-        grouped
-        .pivot_table(index=num, columns=denom, values=y_col, aggfunc="sum",observed=False )
+        grouped.pivot_table(
+            index=num, columns=denom, values=y_col, aggfunc="sum", observed=False
+        )
     )
 
     grouped_wide = grouped_wide.apply(pd.to_numeric, errors="coerce") \
                                .replace([np.inf, -np.inf], np.nan)
+
+    # Optional: sort rows naturally if num looks like an age variable
+    if is_age_var(num):
+        grouped_wide = grouped_wide.sort_index(key=lambda idx: [age_key(x) for x in idx])
 
     if mode == "percent":
         grouped_wide = grouped_wide.fillna(0).round(0).astype("Int64")
@@ -300,14 +345,31 @@ def format_table_data(grouped, denom, num, y_col, mode):
     df_out = grouped_wide.reset_index()
     df_out = df_out.where(pd.notna(df_out), None)
 
-    other_columns = [col for col in df_out.columns if col != "Total"]
-    new_column_order = other_columns + ["Total"] if "Total" in df_out.columns else other_columns
+    # Ensure first column is either num or denom (whichever exists)
+    first_col = num if num in df_out.columns else (denom if denom in df_out.columns else None)
+
+    # Columns (excluding first and "Total")
+    other_columns = [c for c in df_out.columns if c not in {first_col, "Total"}]
+
+    # Conditional sort: numeric/natural for age columns; else alphabetical
+    if is_age_var(denom):   # denom values are the column headers
+        other_columns = sorted(other_columns, key=age_key)
+    else:
+        other_columns = sorted(other_columns, key=lambda x: str(x).lower())
+
+    # Final order + keep "Total" last if present
+    new_column_order = ([first_col] if first_col else []) + other_columns
+    if "Total" in df_out.columns:
+        new_column_order += ["Total"]
+
     df_out = df_out[new_column_order]
 
+    # Dash table metadata
     columns = [{"name": str(c), "id": str(c)} for c in df_out.columns]
     data = df_out.to_dict("records")
 
-    return grouped_wide, columns, data
+    # Return what you actually display
+    return df_out, columns, data
 
 
 def format_solo_table(grouped: pd.DataFrame, var: str, y_col: str, mode: str):
@@ -317,12 +379,10 @@ def format_solo_table(grouped: pd.DataFrame, var: str, y_col: str, mode: str):
     df_out = grouped[[var, y_col]].copy()
     df_out[var] = df_out[var].astype(str)
 
-    # --- Add total row before formatting ---
     total_val = pd.to_numeric(df_out[y_col], errors="coerce").fillna(0).sum()
     total_row = pd.DataFrame({var: ["Total"], y_col: [total_val]})
     df_out = pd.concat([df_out, total_row], ignore_index=True)
 
-    # --- Format based on mode ---
     if mode == "percent":
         df_out[y_col] = (
             pd.to_numeric(df_out[y_col], errors="coerce")
@@ -361,8 +421,9 @@ def create_percent_charts(percent_df, denom, num, filters):
     if denom is None or num is None or percent_df.empty:
         return html.Div()
 
-    grouped = percent_df[percent_df[denom].astype(str) != "Total"].copy()
-    grouped = percent_df[percent_df[num].astype(str) != "Total"].copy()
+    is_total_denom = percent_df[denom].astype(str).str.lower().str.strip().eq("total")
+    is_total_num = percent_df[num].astype(str).str.lower().str.strip().eq("total")
+    grouped = percent_df[~(is_total_denom | is_total_num)].copy()
     figures = []
 
     keys = grouped[denom].dropna().unique()
