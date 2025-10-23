@@ -10,7 +10,7 @@ import re
 
 
 EXCLUDED_COLS = {"ID", "PRECINCT", "STANUM", "BACKSIDE", "TELEPOLL", "CALL", "CDNUM", "VERSION",
-                 "ZCODE1", "ZCODE2", "ZCODE3", "ZCODE4", "GEOCODE"}
+                 "ZIPCODE", "ZCODE1", "ZCODE2", "ZCODE3", "ZCODE4", "GEOCODE"}
 EXCLUDE_VALUES = {
     "Did not vote", "None", "Other", "Omit",
     None, "", " ", "  ", "N/A", "NA"
@@ -80,12 +80,10 @@ def prepare_grouped_data(df, denom, num,year, weight_col=None, hide_missing=True
     if hide_excluded and 'EXCLUDED_FLAG' in dff.columns:
         dff = dff[~dff['EXCLUDED_FLAG'].astype(bool)]
 
-    if year == 2025:
-        try:
-            dff = dff[~dff[denom].astype(str).str.lower().eq("did not vote")]
-            dff = dff[~dff[num].astype(str).str.lower().eq("did not vote")]
-        except:
-            pass
+
+    dff = dff[~dff[denom].astype(str).str.lower().eq("did not vote")]
+    dff = dff[~dff[num].astype(str).str.lower().eq("did not vote")]
+
     use_weights = weight_col and weight_col in dff.columns
     if use_weights:
         dff = dff.copy()
@@ -165,11 +163,9 @@ def prepare_solo_data(df, var, year, weight_col=None, hide_missing=True, hide_ex
     if hide_excluded and "EXCLUDED_FLAG" in dff.columns:
         dff = dff[~dff["EXCLUDED_FLAG"].astype(bool)]
 
-    if year == 2025:
-        try:
-            dff = dff[dff[var].str.lower() != "did not vote"]
-        except:
-            pass
+
+    dff = dff[dff[var].str.lower() != "did not vote"]
+
 
     use_weights = bool(weight_col) and (weight_col in dff.columns)
     if use_weights:
@@ -302,26 +298,6 @@ def age_key(label):
     return (3, s)
 
 
-def order_columns_conditional(df_out, num=None, denom=None):
-    first_col = None
-    if num in df_out.columns:
-        first_col = num
-    elif denom in df_out.columns:
-        first_col = denom
-
-    other_columns = [c for c in df_out.columns if c not in {first_col, "Total"}]
-
-    if is_age_variable(num) or is_age_variable(denom):
-        other_columns = sorted(other_columns, key=natural_age_sort_key)
-    else:
-        other_columns = sorted(other_columns, key=str.lower)
-
-    new_order = ([first_col] if first_col else []) + other_columns
-    if "Total" in df_out.columns:
-        new_order += ["Total"]
-
-    return df_out[new_order]
-
 def format_table_data(grouped, denom, num, y_col, mode):
     grouped_wide = (
         grouped.pivot_table(
@@ -342,23 +318,51 @@ def format_table_data(grouped, denom, num, y_col, mode):
     else:
         grouped_wide = grouped_wide.fillna(0).round(0).astype("Int64")
 
+
+
     df_out = grouped_wide.reset_index()
+
     df_out = df_out.where(pd.notna(df_out), None)
 
-    # Ensure first column is either num or denom (whichever exists)
+
     first_col = num if num in df_out.columns else (denom if denom in df_out.columns else None)
 
-    # Columns (excluding first and "Total")
-    other_columns = [c for c in df_out.columns if c not in {first_col, "Total"}]
+    uniques = pd.Index(df_out[first_col].dropna().unique())
 
-    # Conditional sort: numeric/natural for age columns; else alphabetical
+    norm = uniques.map(lambda x: str(x).strip().casefold())
+
+    special_norms = {"other", "omit", "total"}
+    base_rows = uniques[~norm.isin(special_norms)].tolist()
+
+    if is_age_var(first_col) or (first_col == denom and is_age_var(denom)):
+        base_rows = sorted(base_rows, key=age_key)
+    else:
+        base_rows = sorted(base_rows, key=lambda x: str(x).lower())
+
+    new_row_order = list(base_rows)
+    for s in ["Other", "Omit", "Total"]:
+        hits = uniques[norm == s.lower()]
+        if len(hits):
+            new_row_order.extend(hits.tolist())
+
+    df_out = (df_out.set_index(first_col)
+              .loc[new_row_order]
+              .reset_index())
+
+    # Columns (excluding first and "Total")
+    other_columns = [c for c in df_out.columns if c not in {first_col, "Total", "Omit", "Other"}]
+
     if is_age_var(denom):   # denom values are the column headers
         other_columns = sorted(other_columns, key=age_key)
     else:
         other_columns = sorted(other_columns, key=lambda x: str(x).lower())
 
-    # Final order + keep "Total" last if present
     new_column_order = ([first_col] if first_col else []) + other_columns
+
+    if "Other" in df_out.columns:
+        new_column_order += ["Other"]
+    if "Omit" in df_out.columns:
+        new_column_order += ["Omit"]
     if "Total" in df_out.columns:
         new_column_order += ["Total"]
 
@@ -380,32 +384,46 @@ def format_solo_table(grouped: pd.DataFrame, var: str, y_col: str, mode: str):
     df_out[var] = df_out[var].astype(str)
 
     total_val = pd.to_numeric(df_out[y_col], errors="coerce").fillna(0).sum()
+    df_out = df_out[~df_out[var].str.strip().str.casefold().eq("total")]
     total_row = pd.DataFrame({var: ["Total"], y_col: [total_val]})
     df_out = pd.concat([df_out, total_row], ignore_index=True)
 
     if mode == "percent":
         df_out[y_col] = (
             pd.to_numeric(df_out[y_col], errors="coerce")
-              .fillna(0)
-              .round(0)
-              .astype(int)
-              .astype(str) + "%"
+              .fillna(0).round(0).astype(int).astype(str) + "%"
         )
-        # Set total to 100%
-        df_out.loc[df_out[var] == "Total", y_col] = "100%"
+        mask_total = df_out[var].str.strip().str.casefold().eq("total")
+        df_out.loc[mask_total, y_col] = "100%"
     else:
         df_out[y_col] = (
             pd.to_numeric(df_out[y_col], errors="coerce")
-              .fillna(0)
-              .round(0)
-              .astype("Int64")
+              .fillna(0).round(0).astype("Int64")
         )
 
-    df_out = df_out.where(pd.notna(df_out), None)
+    uniques = pd.Index(df_out[var].dropna().unique())
+    norm = uniques.map(lambda x: str(x).strip().casefold())
 
+    special_norms = {"other", "omit", "total"}
+    base_rows = uniques[~norm.isin(special_norms)].tolist()
+
+    if is_age_var(var):
+        base_rows = sorted(base_rows, key=age_key)
+    else:
+        base_rows = sorted(base_rows, key=lambda x: str(x).lower())
+
+    new_row_order = list(base_rows)
+    for s in ["Other", "Omit", "Total"]:
+        hits = uniques[norm == s.lower()]
+        if len(hits):
+            new_row_order.extend(hits.tolist())
+
+    df_out[var] = pd.Categorical(df_out[var], categories=new_row_order, ordered=True)
+    df_out = df_out.sort_values(var).reset_index(drop=True)
+
+    df_out = df_out.where(pd.notna(df_out), None)
     columns = [{"name": str(c), "id": str(c)} for c in df_out.columns]
     data = df_out.to_dict("records")
-
     return columns, data
 
 def _norm(v):
@@ -421,9 +439,18 @@ def create_percent_charts(percent_df, denom, num, filters):
     if denom is None or num is None or percent_df.empty:
         return html.Div()
 
-    is_total_denom = percent_df[denom].astype(str).str.lower().str.strip().eq("total")
-    is_total_num = percent_df[num].astype(str).str.lower().str.strip().eq("total")
-    grouped = percent_df[~(is_total_denom | is_total_num)].copy()
+    # Normalize text (lowercase, strip spaces)
+    denom_clean = percent_df[denom].astype(str).str.lower().str.strip()
+    num_clean = percent_df[num].astype(str).str.lower().str.strip()
+
+    # Identify "total" or "omit" rows
+    is_total_or_omit_denom = denom_clean.isin(["total", "omit"])
+    is_total_or_omit_num = num_clean.isin(["total", "omit"])
+
+    # Filter them out
+    percent_df = percent_df[~(is_total_or_omit_denom | is_total_or_omit_num)]
+
+    grouped = percent_df.copy()
     figures = []
 
     keys = grouped[denom].dropna().unique()

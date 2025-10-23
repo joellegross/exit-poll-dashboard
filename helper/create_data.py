@@ -12,7 +12,8 @@ states_full = [
     'Missouri', 'Montana', 'Nebraska', 'Nevada', 'New Hampshire', 'New Jersey', 'New Mexico',
     'New York', 'North Carolina', 'North Dakota', 'Ohio', 'Oklahoma', 'Oregon', 'Pennsylvania',
     'Rhode Island', 'South Carolina', 'South Dakota', 'Tennessee', 'Texas', 'Utah', 'Vermont',
-    'Virginia', 'Washington', 'West Virginia', 'Wisconsin', 'Wyoming', 'District of Columbia', 'Puerto Rico'
+    'Virginia', 'Washington', 'West Virginia', 'Wisconsin', 'Wyoming', 'District of Columbia', 'Puerto Rico',
+    'New York City'
 ]
 
 states_abbr = [
@@ -22,7 +23,7 @@ states_abbr = [
     'MO', 'MT', 'NE', 'NV', 'NH', 'NJ', 'NM',
     'NY', 'NC', 'ND', 'OH', 'OK', 'OR', 'PA',
     'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VT',
-    'VA', 'WA', 'WV', 'WI', 'WY', 'DC', 'PR'
+    'VA', 'WA', 'WV', 'WI', 'WY', 'DC', 'PR', 'NYC'
 ]
 full_to_abbr = {state.upper(): abbr for state, abbr in zip(states_full, states_abbr)}
 
