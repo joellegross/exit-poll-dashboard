@@ -297,6 +297,49 @@ def age_key(label):
     if m: return (1, int(m.group(1)))
     return (3, s)
 
+def is_income_var(name: str) -> bool:
+    return isinstance(name, str) and "income" in name.lower()
+
+def _inc_to_int_dollars(txt: str) -> int:
+    t = str(txt).lower().replace(",", "").replace("$", "").strip()
+    m = re.match(r"^(\d+)\s*k$", t)
+    if m: return int(m.group(1)) * 1000
+    m = re.match(r"^\d+$", t)
+    if m: return int(m.group(0))
+    return 10**12
+
+def income_key(label):
+    if label is None:
+        return (97, "")
+    s = str(label).strip()
+    if re.fullmatch(r"(?i)\s*total\s*", s):
+        return (99, "total")
+    sl = s.lower().replace("–", "-").replace("—", "-")
+    sl = sl.replace(",", "").replace("$", "").strip()
+
+    m = re.match(r"(?i)^(under|less\s*than)\s*(\d+)\b", sl)
+    if m:
+        upper = _inc_to_int_dollars(m.group(2))
+        return (0, upper - 1)
+
+    m = re.match(r"^(\d+)\s*(?:-\s*|to\s*)(\d+)\b", sl)
+    if m:
+        low = _inc_to_int_dollars(m.group(1))
+        return (1, low)
+
+    m = re.match(r"^(\d+)\s*(\+|or\s*(more|over))\b", sl)
+    if m:
+        low = _inc_to_int_dollars(m.group(1))
+        return (2, low)
+
+    m = re.match(r"^(\d+)$", sl)
+    if m:
+        val = _inc_to_int_dollars(m.group(1))
+        return (1, val)
+
+    return (98, sl)
+
+# --- main function with income integrated ---
 
 def format_table_data(grouped, denom, num, y_col, mode):
     grouped_wide = (
@@ -308,9 +351,11 @@ def format_table_data(grouped, denom, num, y_col, mode):
     grouped_wide = grouped_wide.apply(pd.to_numeric, errors="coerce") \
                                .replace([np.inf, -np.inf], np.nan)
 
-    # Optional: sort rows naturally if num looks like an age variable
+    # Optional: natural row sort if num looks like age or income
     if is_age_var(num):
         grouped_wide = grouped_wide.sort_index(key=lambda idx: [age_key(x) for x in idx])
+    elif is_income_var(num):
+        grouped_wide = grouped_wide.sort_index(key=lambda idx: [income_key(x) for x in idx])
 
     if mode == "percent":
         grouped_wide = grouped_wide.fillna(0).round(0).astype("Int64")
@@ -318,24 +363,23 @@ def format_table_data(grouped, denom, num, y_col, mode):
     else:
         grouped_wide = grouped_wide.fillna(0).round(0).astype("Int64")
 
-
-
     df_out = grouped_wide.reset_index()
-
     df_out = df_out.where(pd.notna(df_out), None)
 
-
+    # Determine first column
     first_col = num if num in df_out.columns else (denom if denom in df_out.columns else None)
 
+    # Row ordering (handles Other/Omit/Total at end)
     uniques = pd.Index(df_out[first_col].dropna().unique())
-
     norm = uniques.map(lambda x: str(x).strip().casefold())
-
     special_norms = {"other", "omit", "total"}
     base_rows = uniques[~norm.isin(special_norms)].tolist()
 
+    # Choose the right key for base row sorting
     if is_age_var(first_col) or (first_col == denom and is_age_var(denom)):
         base_rows = sorted(base_rows, key=age_key)
+    elif is_income_var(first_col) or (first_col == denom and is_income_var(denom)):
+        base_rows = sorted(base_rows, key=income_key)
     else:
         base_rows = sorted(base_rows, key=lambda x: str(x).lower())
 
@@ -349,16 +393,17 @@ def format_table_data(grouped, denom, num, y_col, mode):
               .loc[new_row_order]
               .reset_index())
 
-    # Columns (excluding first and "Total")
+    # Column ordering (exclude first and specials; sort by age/income if denom)
     other_columns = [c for c in df_out.columns if c not in {first_col, "Total", "Omit", "Other"}]
 
-    if is_age_var(denom):   # denom values are the column headers
+    if is_age_var(denom):            # denom values are the column headers
         other_columns = sorted(other_columns, key=age_key)
+    elif is_income_var(denom):
+        other_columns = sorted(other_columns, key=income_key)
     else:
         other_columns = sorted(other_columns, key=lambda x: str(x).lower())
 
     new_column_order = ([first_col] if first_col else []) + other_columns
-
     if "Other" in df_out.columns:
         new_column_order += ["Other"]
     if "Omit" in df_out.columns:
@@ -371,8 +416,6 @@ def format_table_data(grouped, denom, num, y_col, mode):
     # Dash table metadata
     columns = [{"name": str(c), "id": str(c)} for c in df_out.columns]
     data = df_out.to_dict("records")
-
-    # Return what you actually display
     return df_out, columns, data
 
 
@@ -383,11 +426,13 @@ def format_solo_table(grouped: pd.DataFrame, var: str, y_col: str, mode: str):
     df_out = grouped[[var, y_col]].copy()
     df_out[var] = df_out[var].astype(str)
 
+    # Build/append Total
     total_val = pd.to_numeric(df_out[y_col], errors="coerce").fillna(0).sum()
     df_out = df_out[~df_out[var].str.strip().str.casefold().eq("total")]
     total_row = pd.DataFrame({var: ["Total"], y_col: [total_val]})
     df_out = pd.concat([df_out, total_row], ignore_index=True)
 
+    # Value formatting
     if mode == "percent":
         df_out[y_col] = (
             pd.to_numeric(df_out[y_col], errors="coerce")
@@ -401,14 +446,18 @@ def format_solo_table(grouped: pd.DataFrame, var: str, y_col: str, mode: str):
               .fillna(0).round(0).astype("Int64")
         )
 
+    # Row ordering
     uniques = pd.Index(df_out[var].dropna().unique())
     norm = uniques.map(lambda x: str(x).strip().casefold())
-
     special_norms = {"other", "omit", "total"}
+
     base_rows = uniques[~norm.isin(special_norms)].tolist()
 
+    # Key selection: age > income > alpha
     if is_age_var(var):
         base_rows = sorted(base_rows, key=age_key)
+    elif is_income_var(var):
+        base_rows = sorted(base_rows, key=income_key)
     else:
         base_rows = sorted(base_rows, key=lambda x: str(x).lower())
 
@@ -418,10 +467,11 @@ def format_solo_table(grouped: pd.DataFrame, var: str, y_col: str, mode: str):
         if len(hits):
             new_row_order.extend(hits.tolist())
 
+    # Apply categorical order and finalize
     df_out[var] = pd.Categorical(df_out[var], categories=new_row_order, ordered=True)
     df_out = df_out.sort_values(var).reset_index(drop=True)
-
     df_out = df_out.where(pd.notna(df_out), None)
+
     columns = [{"name": str(c), "id": str(c)} for c in df_out.columns]
     data = df_out.to_dict("records")
     return columns, data
@@ -435,65 +485,103 @@ def _is_excluded(v):
     return _norm(v) in _EXCLUDE_NORM
 
 def create_percent_charts(percent_df, denom, num, filters):
-
     if denom is None or num is None or percent_df.empty:
         return html.Div()
 
     # Normalize text (lowercase, strip spaces)
     denom_clean = percent_df[denom].astype(str).str.lower().str.strip()
-    num_clean = percent_df[num].astype(str).str.lower().str.strip()
+    num_clean   = percent_df[num].astype(str).str.lower().str.strip()
 
-    # Identify "total" or "omit" rows
+    # Identify and drop "total"/"omit" rows
     is_total_or_omit_denom = denom_clean.isin(["total", "omit"])
-    is_total_or_omit_num = num_clean.isin(["total", "omit"])
-
-    # Filter them out
-    percent_df = percent_df[~(is_total_or_omit_denom | is_total_or_omit_num)]
+    is_total_or_omit_num   = num_clean.isin(["total", "omit"])
+    percent_df = percent_df[~(is_total_or_omit_denom | is_total_or_omit_num)].copy()
 
     grouped = percent_df.copy()
     figures = []
 
-    keys = grouped[denom].dropna().unique()
-    var_col = num
+    # ---------- helpers for category ordering ----------
+    def order_values(values, by_var_name):
+        """Return categories ordered via age_key / income_key / alpha, pushing 'Other' and 'N/A' to the end."""
+        vals = list(pd.unique(pd.Series(values)))  # preserve dtype
+        # normalize for special detection
+        norm = [str(v).strip().casefold() for v in vals]
+        specials = {"other", "n/a"}
+        base = [v for v, n in zip(vals, norm) if n not in specials]
 
-    var_values = grouped[var_col].dropna().unique()
+        if is_age_var(by_var_name):
+            base = sorted(base, key=age_key)
+        elif is_income_var(by_var_name):
+            base = sorted(base, key=income_key)
+        else:
+            base = sorted(base, key=lambda x: str(x).lower())
+
+        ordered = list(base)
+        # append specials in fixed order if present
+        for s in ["Other", "N/A"]:
+            mask = [str(v).strip().casefold() == s.lower() for v in vals]
+            if any(mask):
+                # might be multiple spellings/cases—append all hits in original spellings
+                ordered.extend([v for v, m in zip(vals, mask) if m])
+        return ordered
+
+    # Sort the facet keys (denom) for consistent chart placement
+    keys_raw = grouped[denom].dropna().unique()
+    if is_age_var(denom):
+        keys = sorted(keys_raw, key=age_key)
+    elif is_income_var(denom):
+        keys = sorted(keys_raw, key=income_key)
+    else:
+        keys = sorted(keys_raw, key=lambda x: str(x).lower())
+
+    # Detect candidate→party coloring as you had
+    var_col = num
+    var_values_all = grouped[var_col].dropna().unique()
 
     normalized_party_lookup = {name.lower().strip(): party for name, party in CANDIDATE_PARTY_MAP.items()}
     num_matches = sum(
-        1 for v in var_values if isinstance(v, str) and v.lower().strip() in normalized_party_lookup
+        1 for v in var_values_all if isinstance(v, str) and v.lower().strip() in normalized_party_lookup
     )
-    is_pres_candidate_question = num_matches >= max(1, len(var_values) / 2)
+    is_pres_candidate_question = num_matches >= max(1, len(var_values_all) / 2)
 
     if is_pres_candidate_question:
+        # fixed party colors
         color_map = {}
-        for name in var_values:
+        for name in var_values_all:
             norm_name = name.lower().strip() if isinstance(name, str) else str(name).lower().strip()
             party = normalized_party_lookup.get(norm_name, "Other")
             color_map[name] = PARTY_COLORS.get(party, PARTY_COLORS["Other"])
     else:
+        # build once with a deterministic order based on the full set
+        overall_order = order_values(var_values_all, var_col)
         default_colors = px.colors.qualitative.Set3 + px.colors.qualitative.Set1
-        color_map = {
-            cat: default_colors[i % len(default_colors)]
-            for i, cat in enumerate(sorted(var_values, key=lambda x: str(x)))
-        }
+        color_map = {cat: default_colors[i % len(default_colors)] for i, cat in enumerate(overall_order)}
 
+    # ---------- build one pie per denom key ----------
     for key_val in keys:
         filtered = grouped.loc[grouped[denom] == key_val].copy()
+        if filtered.empty:
+            continue
+
         title = str(key_val)
         if filters:
             filter_text = ", ".join([f"{k} = {v}" for k, v in filters.items()])
             title = f"{title}<br><sup style='color:red;'>Filtered by {filter_text}</sup>"
-        else:
-            title = title
 
-        if filtered.empty:
-            continue
-
+        # Fill to 100% with N/A if needed (kept as a special at the end)
         subtotal = float(filtered["Percentage"].sum())
         leftover = max(0.0, round(100.0 - subtotal, 0))
         if leftover > 0:
-            extra = {denom: key_val, var_col: "N/A", "Percentage": leftover}
-            filtered = pd.concat([filtered, pd.DataFrame([extra])], ignore_index=True)
+            filtered = pd.concat(
+                [filtered, pd.DataFrame([{denom: key_val, var_col: "N/A", "Percentage": leftover}])],
+                ignore_index=True
+            )
+
+        # ORDER the slice categories for this pie
+        present_order = order_values(filtered[var_col].dropna().unique(), var_col)
+        # apply order to data for pie + legend
+        filtered[var_col] = pd.Categorical(filtered[var_col], categories=present_order, ordered=True)
+        filtered = filtered.sort_values(var_col)
 
         fig = px.pie(
             filtered,
@@ -503,13 +591,14 @@ def create_percent_charts(percent_df, denom, num, filters):
             title=title,
             color=var_col,
             color_discrete_map=color_map,
+            category_orders={var_col: present_order},  # enforce legend order
         )
 
         fig.update_traces(
             text=[f"{round(v)}%" if v > 0 else "" for v in filtered["Percentage"]],
             textinfo="text",
             hovertemplate="%{label}: %{value:.1f}%<extra></extra>",
-            sort=False,
+            sort=False,  # keep our custom order
         )
 
         fig.update_layout(
